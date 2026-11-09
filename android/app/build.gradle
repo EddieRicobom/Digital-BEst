@@ -16,6 +16,15 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // Public test key: keeps debug APKs updatable; never use for production releases.
+    signingConfigs {
+        debug {
+            storeFile file('../debug-test.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
