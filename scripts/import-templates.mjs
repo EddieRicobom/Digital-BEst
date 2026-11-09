@@ -11,7 +11,14 @@ if (!catalogResponse.ok) throw new Error('Catálogo Digital Link indisponível')
 const catalog = await catalogResponse.json()
 const cards = catalog.cards.filter(c => c.type === 'BEM' && !c.isNonDigimon && c.characters.some(x => x.stage === 0))
 const templates = []
+const bemStats = {}
 let spriteCount = 0
+let statsCount = 0
+
+function validStat(value) {
+  // The unsigned 16-bit value 0xffff marks unavailable battle stats, including babies.
+  return Number.isInteger(value) && value > 0 && value < 0xffff
+}
 
 for (const card of cards) {
   const response = await fetch(origin + card.templateUrl)
@@ -25,6 +32,21 @@ for (const card of cards) {
     characters: characters.map(({ index, name, stage, previewUrl }) => ({ index, name, stage, previewUrl })),
     evolutions: data.transformations.entries.map(({ from, to, minutes, vital, trophies, battles, winRatio, adventureLevel }) => ({ from, to, minutes, vital, trophies, battles, winRatio, adventureLevel })),
   })
+
+  if (data.version === 1 && data.type === 'BEM' && data.checksumValid === true) {
+    const stats = {}
+    for (const { index, stage, attribute } of characters) {
+      const row = data.characterStats?.entries?.[index]
+      if (!row || row.stage !== stage || row.attribute !== attribute) continue
+      const { ap, hp, bp } = row
+      if (![ap, hp, bp].every(validStat)) continue
+      stats[index] = { ap, hp, bp }
+      statsCount++
+    }
+    bemStats[card.id] = stats
+  } else {
+    console.warn(`Estatísticas indisponíveis: ${card.cardName}`)
+  }
 
   if (!sprites || card.id === anniversary) continue
   if (data.version !== 1 || data.type !== 'BEM') throw new Error(`Formato de sprites inesperado: ${card.cardName}`)
@@ -44,5 +66,7 @@ for (const card of cards) {
   }
 }
 await writeFile(new URL('../src/templates.json', import.meta.url), JSON.stringify(templates))
+await writeFile(new URL('../src/bem-stats.json', import.meta.url), `${JSON.stringify(bemStats)}\n`)
 console.log(`${templates.length} templates importados`)
+console.log(`${statsCount} conjuntos de estatísticas BEM importados`)
 if (sprites) console.log(`${spriteCount} tiras de sprites geradas`)

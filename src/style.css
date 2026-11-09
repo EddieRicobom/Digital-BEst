@@ -54,3 +54,59 @@ nav .active{background:#26382f;border-radius:10px}
 @media (prefers-reduced-motion:reduce){.egg-display.hatching{animation:none}}
 
 .in-battle{padding-bottom:env(safe-area-inset-bottom,0px)}.in-battle main{padding:calc(var(--safe-area-inset-top,env(safe-area-inset-top,0px)) + 8px) 12px 12px}
+
+.partner-slots{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin:0 0 16px}
+.partner-slots button{min-width:0;min-height:52px;border:1px solid #344b46;border-radius:10px;background:#15232b;color:#a6b9b6;padding:6px 3px}
+.partner-slots button strong,.partner-slots button span{display:block}
+.partner-slots button strong{font:700 14px 'Space Grotesk'}
+.partner-slots button span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;margin-top:3px}
+.partner-slots button.active{border-color:#c7f56b;background:#304335;color:#dcf6ad}
+.battle-mode{display:flex;gap:8px;margin-top:18px}.battle-mode button{flex:1;min-height:45px;border:1px solid #41564c;border-radius:9px;background:#1b2932;color:#a9beb3;font-weight:700}
+.battle-mode button.active{border-color:#c5f064;background:#304335;color:#dcf6ad}
+
+.stats {
+  margin-block: 10px;
+}
+
+.stats > div {
+  padding-block: 7px;
+}
+
+.stats strong {
+  margin-block: 3px 0;
+  line-height: 1.15;
+}
+
+.stats span {
+  display: block;
+}
+
+.panel.adventure {
+  padding-block: 14px;
+}
+
+.adventure > h2 {
+  margin-block: 4px 8px;
+}
+
+.adventure > p {
+  margin-block: 6px;
+  line-height: 1.45;
+}
+
+.adventure .progress-head,
+.adventure .battle-mode {
+  margin-top: 12px;
+}
+
+.adventure > .secondary-battle {
+  margin-top: 6px;
+}
+
+.line-change{color:#f5d18c!important;font-weight:700;line-height:1.5}
+.form-tree{list-style:none;margin:8px 0 0;padding:0!important}
+.form-tree li{position:relative;display:flex;gap:12px;align-items:flex-start;min-height:48px;padding:0 0 13px}
+.form-tree li:not(:last-child)::before{content:'';position:absolute;left:6px;top:14px;bottom:0;width:2px;background:#446452}
+.form-node{position:relative;z-index:1;flex:none;width:14px;height:14px;border:2px solid #93b983;border-radius:50%;margin-top:3px;background:#172b25}
+.form-tree li.current .form-node{background:#c5f064;border-color:#c5f064;box-shadow:0 0 10px #c5f06488}
+.form-tree strong,.form-tree small{display:block}.form-tree strong{font-size:13px;color:#e7edf7}.form-tree small{font-size:10px;color:#91a6a2;margin-top:2px}

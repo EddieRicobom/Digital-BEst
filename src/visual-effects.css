@@ -1,0 +1,25 @@
+.app-shell.gba-display :is(.screen, .arena-field) {
+  isolation: isolate;
+}
+
+.app-shell.gba-display :is(.screen, .arena-field)::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(90deg, rgb(38 46 29 / 9%) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(0deg, rgb(38 46 29 / 7%) 0 1px, transparent 1px 3px),
+    linear-gradient(rgb(222 228 153 / 5%), rgb(154 169 104 / 7%));
+}
+
+.app-shell.sprites-soft {
+  --sprite-image-rendering: auto;
+}
+
+.app-shell.sprites-cel-shaded .sprite-frame.is-cel-shaded,
+.app-shell.sprites-cel-shaded .enemy-sprite.is-cel-shaded {
+  filter: drop-shadow(1px 1px 0 rgb(14 20 29 / 88%));
+}
