@@ -52,3 +52,5 @@ nav .active{background:#26382f;border-radius:10px}
 
 .egg-display{display:grid;place-items:center;height:160px;margin:25px auto}.egg-display .animated-sprite{height:150px}.egg-display.hatching{animation:egg-hatch 2.4s ease-in-out both}
 @media (prefers-reduced-motion:reduce){.egg-display.hatching{animation:none}}
+
+.in-battle{padding-bottom:env(safe-area-inset-bottom,0px)}.in-battle main{padding:calc(var(--safe-area-inset-top,env(safe-area-inset-top,0px)) + 8px) 12px 12px}

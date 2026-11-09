@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import AnimatedSprite from './AnimatedSprite.vue'
+import { arenaMoves } from './arenaMoves'
 
-const props = defineProps<{ sprite: string; sheet?: string; baby?: boolean; power: number; stamina: number }>()
+const props = defineProps<{ sprite: string; sheet?: string; baby?: boolean; partner: string; stage: number; templateId?: string; power: number; stamina: number }>()
 const emit = defineEmits<{ finish: [won: boolean] }>()
 
 type Position = { x: number; y: number }
-type Enemy = Position & { id: number; hp: number; maxHp: number }
+type Enemy = Position & { id: number; hp: number; maxHp: number; kind: 'pursuer' | 'shooter' | 'charger'; cooldown: number; windup: number; charge: number; vx: number; vy: number }
 type Hit = Position & { expires: number; enemyId: number }
+type Projectile = Position & { id: number; vx: number; vy: number; remaining: number; damage: number; color: string; hostile: boolean; piercing: boolean; hitIds: number[] }
+type Effect = Position & { id: number; expires: number; radius: number; color: string; kind: 'burst' | 'slash'; angle: number }
 type Direction = 'up' | 'left' | 'down' | 'right'
 type PointerInput = { direction: Direction; startedAt: number }
 
@@ -29,21 +32,43 @@ const maxHp = 100 + props.stamina * 5
 const player = ref({ x: 50, y: 74, hp: maxHp })
 const enemies = ref<Enemy[]>([])
 const hit = ref<Hit>()
+const projectiles = ref<Projectile[]>([])
+const effects = ref<Effect[]>([])
+const selectedMove = ref(0)
+const moves = computed(() => arenaMoves(props.partner, props.stage, props.templateId))
+const activeMove = computed(() => moves.value[selectedMove.value]!)
+const attackCooldown = ref(0)
+const dodgeCooldown = ref(0)
+const dodgeFrames = ref(0)
+let facing = { x: 0, y: -1 }
+let dodgeDirection = { x: 0, y: -1 }
+let lastAttack = 0
+const attacking = ref(false)
 const time = ref(duration)
 const defeated = ref(0)
 const paused = ref(false)
 const arena = ref<HTMLElement>()
+const field = ref<HTMLElement>()
+const fieldAspect = ref(1)
+function updateFieldAspect() { const rect = field.value?.getBoundingClientRect(); if (rect?.width && rect.height) fieldAspect.value = rect.width / rect.height }
 const resumeButton = ref<HTMLButtonElement>()
-const enemySheet = `${import.meta.env.BASE_URL}assets/sprites/enemy-greymon.png`
+const enemySheets = {
+  pursuer: `${import.meta.env.BASE_URL}assets/sprites/c8dacdf5b84f7f33/2.png`,
+  shooter: `${import.meta.env.BASE_URL}assets/sprites/2704968a7410c870/2.png`,
+  charger: `${import.meta.env.BASE_URL}assets/sprites/enemy-greymon.png`,
+}
 const keys = ref(new Map<string, Direction>())
 const pointers = ref(new Map<number, PointerInput>())
 const heldDirections = computed(() => new Set([
   ...keys.value.values(),
   ...Array.from(pointers.value.values(), input => input.direction),
 ]))
+const idleFrames = [0, 1], babyWalkFrames = [0, 2], babyAttackFrames = [0, 8], walkFrames = [2, 3], attackFrames = [0, 10]
+const fighterFrames = computed(() => attacking.value ? (props.baby ? babyAttackFrames : attackFrames) : heldDirections.value.size ? (props.baby ? babyWalkFrames : walkFrames) : idleFrames)
 let playing = true
 let frame = 0
 let nextId = 1
+let spawnedEnemies = 0
 let animationId = 0
 let previousTime = 0
 let accumulatedTime = 0
@@ -53,6 +78,9 @@ function keydown(event: KeyboardEvent) {
   if (!playing || paused.value || event.altKey || event.ctrlKey || event.metaKey ||
     (event.target instanceof HTMLElement && event.target.closest('input, textarea, select, [contenteditable]'))) return
   const key = event.key.toLowerCase()
+  if (!event.repeat && (key === ' ' || key === 'shift' || key === 'f') && !(key === ' ' && event.target instanceof HTMLElement && event.target.closest('button'))) { event.preventDefault(); dodge(); return }
+  if (!event.repeat && key === 'q') { event.preventDefault(); selectedMove.value = (selectedMove.value + 1) % moves.value.length; return }
+  if (!event.repeat && ['1','2','3'].includes(key)) { event.preventDefault(); selectedMove.value = Number(key) - 1; return }
   const direction = keyDirections.get(key)
   if (direction) {
     event.preventDefault()
@@ -130,55 +158,123 @@ function finish(won: boolean) {
   emit('finish', won)
 }
 
-function spawnEnemy() {
-  const side = Math.floor(Math.random() * 4)
-  const edgePosition = Math.random() * 100
-  const hp = 3
-  enemies.value.push({
-    id: nextId++,
-    x: side === 0 ? 0 : side === 1 ? 100 : edgePosition,
-    y: side === 2 ? 0 : side === 3 ? 100 : edgePosition,
-    hp,
-    maxHp: hp,
-  })
-}
-
-function tick() {
-  frame++
+function selectMove(index: number) { if (!paused.value && playing && moves.value[index]) selectedMove.value = index }
+function dodge() {
+  if (!playing || paused.value || dodgeCooldown.value > 0) return
   const held = heldDirections.value
   const dx = Number(held.has('right')) - Number(held.has('left'))
   const dy = Number(held.has('down')) - Number(held.has('up'))
-  if (dx || dy) movePlayer(dx, dy, .24)
+  const length = Math.hypot(dx, dy)
+  dodgeDirection = length ? { x: dx / length, y: dy / length } : { ...facing }
+  dodgeFrames.value = 16
+  dodgeCooldown.value = 135
+}
+function spawnEnemy() {
+  const side = Math.floor(Math.random() * 4)
+  const edgePosition = Math.random() * 100
+  const kind = (['pursuer', 'shooter', 'charger'] as const)[spawnedEnemies++ % 3]!
+  const hp = 4 + Math.max(0, Math.min(props.stage, 6)) * .6
+  enemies.value.push({ id: nextId++, x: side === 0 ? 0 : side === 1 ? 100 : edgePosition,
+    y: side === 2 ? 0 : side === 3 ? 100 : edgePosition, hp, maxHp: hp,
+    kind, cooldown: 40 + Math.floor(Math.random() * 70), windup: 0, charge: 0, vx: 0, vy: 0 })
+}
+function harmEnemy(enemy: Enemy, damage: number) {
+  enemy.hp -= damage
+  hit.value = { x: enemy.x, y: enemy.y, expires: frame + 8, enemyId: enemy.id }
+}
+function shoot(x: number, y: number, dx: number, dy: number, damage: number, range: number, color: string, hostile = false, piercing = false) {
+  const length = Math.hypot(dx, dy) || 1
+  const speed = hostile ? .32 : .8
+  projectiles.value.push({ id: nextId++, x, y, vx: dx / length * speed, vy: dy / length * speed,
+    remaining: range, damage, color, hostile, piercing, hitIds: [] })
+}
+function attack(nearest: Enemy, distance: number) {
+  const move = activeMove.value
+  if (distance > move.range) return
+  const dx = nearest.x - player.value.x, dy = nearest.y - player.value.y
+  const magnitude = Math.hypot(dx, dy)
+  const ux = magnitude ? dx / magnitude : facing.x, uy = magnitude ? dy / magnitude : facing.y
+  facing = { x: ux, y: uy }
+  const damage = move.power * (1 + Math.min(props.power, 100) * .10) * (1 + Math.max(0, Math.min(props.stage, 6)) * .16)
+  attackCooldown.value = Math.max(1, Math.round(move.cooldownMs / stepMs))
+  lastAttack = frame + 10
+  attacking.value = true
+  if (move.pattern === 'burst' || move.pattern === 'slash') {
+    const radius = move.range
+    effects.value.push({ id: nextId++, x: player.value.x, y: player.value.y, expires: frame + 14, radius, color: move.color, kind: move.pattern, angle: Math.atan2(uy, ux) * 180 / Math.PI })
+    for (const enemy of enemies.value) {
+      const ex = enemy.x - player.value.x, ey = enemy.y - player.value.y
+      const d = Math.hypot(ex, ey)
+      if (d <= radius && (move.pattern === 'burst' || d === 0 || (ex * ux + ey * uy) / d >= Math.SQRT1_2)) harmEnemy(enemy, damage)
+    }
+  } else if (move.pattern === 'spread') {
+    for (const angle of [-.24, 0, .24]) {
+      const c = Math.cos(angle), sin = Math.sin(angle)
+      shoot(player.value.x, player.value.y, ux * c - uy * sin, ux * sin + uy * c, damage, move.range, move.color)
+    }
+  } else shoot(player.value.x, player.value.y, ux, uy, damage, move.range, move.color, false, move.pattern === 'pierce')
+}
+function tick() {
+  frame++
+  if (attacking.value && frame >= lastAttack) attacking.value = false
+  if (attackCooldown.value > 0) attackCooldown.value--
+  if (dodgeCooldown.value > 0) dodgeCooldown.value--
+  const held = heldDirections.value
+  const dx = Number(held.has('right')) - Number(held.has('left'))
+  const dy = Number(held.has('down')) - Number(held.has('up'))
+  const invulnerable = dodgeFrames.value > 0
+  if (invulnerable) { movePlayer(dodgeDirection.x, dodgeDirection.y, .85); dodgeFrames.value-- }
+  else if (dx || dy) { const length = Math.hypot(dx, dy); facing = { x: dx / length, y: dy / length }; movePlayer(dx, dy, .24) }
 
-  if (frame % 125 === 5 && enemies.value.length < 16) spawnEnemy()
+  if (frame % 115 === 5 && enemies.value.length < 16) spawnEnemy()
   let nearest: Enemy | undefined
   let nearestDistance = Infinity
-
   for (const enemy of enemies.value) {
-    const ex = player.value.x - enemy.x
-    const ey = player.value.y - enemy.y
-    const distance = Math.hypot(ex, ey)
-    const step = Math.min(distance, .058) / (distance || 1)
-    enemy.x += ex * step
-    enemy.y += ey * step
-    if (distance < 7 && frame % 60 === 0) player.value.hp = Math.max(0, player.value.hp - 5)
-    if (distance < nearestDistance) {
-      nearest = enemy
-      nearestDistance = distance
+    const ex = player.value.x - enemy.x, ey = player.value.y - enemy.y
+    const distance = Math.hypot(ex, ey), ux = ex / (distance || 1), uy = ey / (distance || 1)
+    if (enemy.cooldown > 0) enemy.cooldown--
+    if (enemy.windup > 0) {
+      enemy.windup--
+      if (enemy.windup === 0 && enemy.kind === 'charger') enemy.charge = 25
+      else if (enemy.windup === 0 && enemy.kind === 'shooter') shoot(enemy.x, enemy.y, enemy.vx, enemy.vy, 9, 110, '#ff8d78', true)
+    } else if (enemy.charge > 0) {
+      enemy.x += enemy.vx * .55; enemy.y += enemy.vy * .55; enemy.charge--
+    } else {
+      const speed = enemy.kind === 'shooter' && distance < 28 ? 0 : enemy.kind === 'charger' ? .065 : .058
+      enemy.x += ux * Math.min(distance, speed); enemy.y += uy * Math.min(distance, speed)
+      if (enemy.kind !== 'pursuer' && enemy.cooldown === 0 && distance < 65) {
+        enemy.vx = ux; enemy.vy = uy; enemy.windup = enemy.kind === 'charger' ? 35 : 28; enemy.cooldown = enemy.kind === 'charger' ? 165 : 120
+      }
+    }
+    if (distance < 7 && frame % 45 === 0 && !invulnerable) player.value.hp = Math.max(0, player.value.hp - (enemy.charge > 0 ? 9 : 5))
+    if (distance < nearestDistance) { nearest = enemy; nearestDistance = distance }
+  }
+  if (hit.value && hit.value.expires <= frame) hit.value = undefined
+  if (effects.value.some(effect => effect.expires <= frame)) effects.value = effects.value.filter(effect => effect.expires > frame)
+  if (attackCooldown.value === 0 && nearest) attack(nearest, nearestDistance)
+  for (const shot of projectiles.value) {
+    shot.x += shot.vx; shot.y += shot.vy; shot.remaining -= Math.hypot(shot.vx, shot.vy)
+    if (shot.hostile) {
+      if (Math.hypot(shot.x - player.value.x, shot.y - player.value.y) < 4.5) {
+        if (!invulnerable) player.value.hp = Math.max(0, player.value.hp - shot.damage)
+        shot.remaining = 0
+      }
+    } else {
+      for (const enemy of enemies.value) {
+        if (enemy.hp > 0 && !shot.hitIds.includes(enemy.id) && Math.hypot(shot.x - enemy.x, shot.y - enemy.y) < 5) {
+          harmEnemy(enemy, shot.damage); shot.hitIds.push(enemy.id)
+          if (!shot.piercing) { shot.remaining = 0; break }
+        }
+      }
     }
   }
-
-  if (hit.value?.expires === frame) hit.value = undefined
-  if (frame % 40 === 0 && nearest) {
-    nearest.hp -= 1 + props.power * .1
-    hit.value = { x: nearest.x, y: nearest.y, expires: frame + 8, enemyId: nearest.id }
-    if (nearest.hp <= 0) {
-      const index = enemies.value.indexOf(nearest)
-      enemies.value.splice(index, 1)
-      defeated.value++
-    }
+  if (projectiles.value.some(shot => shot.remaining <= 0 || shot.x < -5 || shot.x > 105 || shot.y < -5 || shot.y > 105))
+    projectiles.value = projectiles.value.filter(shot => shot.remaining > 0 && shot.x >= -5 && shot.x <= 105 && shot.y >= -5 && shot.y <= 105)
+  if (enemies.value.some(enemy => enemy.hp <= 0)) {
+    const alive = enemies.value.filter(enemy => enemy.hp > 0)
+    defeated.value += enemies.value.length - alive.length
+    enemies.value = alive
   }
-
   if (frame % 50 === 0) time.value--
   if (player.value.hp <= 0) finish(false)
   else if (time.value <= 0) finish(true)
@@ -201,6 +297,8 @@ watch(paused, value => {
 }, { flush: 'post' })
 
 onMounted(() => {
+  updateFieldAspect()
+  window.addEventListener('resize', updateFieldAspect)
   window.addEventListener('keydown', keydown)
   window.addEventListener('keyup', keyup)
   window.addEventListener('blur', pause)
@@ -213,6 +311,7 @@ onMounted(() => {
 onUnmounted(() => {
   playing = false
   stopLoop()
+  window.removeEventListener('resize', updateFieldAspect)
   window.removeEventListener('keydown', keydown)
   window.removeEventListener('keyup', keyup)
   window.removeEventListener('blur', pause)
@@ -227,14 +326,16 @@ onUnmounted(() => {
       <strong>{{ time }}s</strong>
       <span>{{ defeated }} DERROTADOS</span>
     </div>
-    <div class="arena-field" :class="{ 'is-paused': paused }">
-      <div v-for="enemy in enemies" :key="enemy.id" class="enemy" :class="{ struck: hit?.enemyId === enemy.id }" :style="{ left: enemy.x + '%', top: enemy.y + '%', '--enemy-delay': (enemy.id % 5) * -.12 + 's' }">
-        <span class="enemy-sprite" aria-hidden="true" :style="{ backgroundImage: `url(${enemySheet})` }"></span>
+    <div ref="field" class="arena-field" :class="{ 'is-paused': paused }">
+      <div v-for="enemy in enemies" :key="enemy.id" class="enemy" :class="{ struck: hit?.enemyId === enemy.id, warning: enemy.windup > 0, shooter: enemy.kind === 'shooter', charger: enemy.kind === 'charger' }" :style="{ left: enemy.x + '%', top: enemy.y + '%', '--enemy-delay': (enemy.id % 5) * -.12 + 's' }">
+        <span v-if="enemy.windup > 0" class="enemy-aim" aria-hidden="true" :style="{ transform: `rotate(${Math.atan2(enemy.vy, enemy.vx * fieldAspect)}rad)` }"></span><span class="enemy-sprite" aria-hidden="true" :style="{ backgroundImage: `url(${enemySheets[enemy.kind]})` }"></span>
         <div class="enemy-hp"><span :style="{ width: 100 * enemy.hp / enemy.maxHp + '%' }"></span></div>
       </div>
+      <div v-for="shot in projectiles" :key="shot.id" class="projectile" :class="{ hostile: shot.hostile }" :style="{left: shot.x + '%', top: shot.y + '%', background: shot.color}"></div>
+      <div v-for="effect in effects" :key="effect.id" class="attack-effect" :class="effect.kind" :style="{left: effect.x + '%', top: effect.y + '%', width: effect.radius * 2 + '%', height: effect.radius * 2 + '%', borderColor: effect.color, transform: `translate(-50%,-50%) rotate(${effect.angle}deg)`}"></div>
       <div v-if="hit" class="hit" aria-hidden="true" :style="{ left: hit.x + '%', top: hit.y + '%' }"></div>
-      <div class="fighter" :class="{ moving: heldDirections.size > 0, attacking: !!hit }" :style="{ left: player.x + '%', top: player.y + '%' }">
-        <AnimatedSprite :sheet="sheet" :fallback="sprite" label="Parceiro" :frames="hit ? (baby ? [0, 8] : [0, 10]) : heldDirections.size ? (baby ? [0, 2] : [2, 3]) : [0, 1]" :paused="paused" :interval="120" />
+      <div class="fighter" :class="{ moving: heldDirections.size > 0, attacking: attacking, dodging: dodgeFrames > 0 }" :style="{ left: player.x + '%', top: player.y + '%' }">
+        <AnimatedSprite :sheet="sheet" :fallback="sprite" label="Parceiro" :frames="fighterFrames" :paused="paused" :interval="120" />
       </div>
       <div v-if="paused" class="pause-screen">
         <strong>Batalha pausada</strong>
@@ -248,8 +349,14 @@ onUnmounted(() => {
       </div>
       <strong>{{ player.hp }}/{{ maxHp }}</strong>
     </div>
-    <p class="arena-credit">Sprite do adversário: EvilGavin · Digital Link</p>
-    <p>Sobreviva por {{ duration }} segundos. Use as setas, WASD ou os botões para desviar. Os ataques são automáticos.</p>
+    <p class="arena-credit">Sprites: templates BEM e Greymon por EvilGavin · Digital Link</p>
+    <p>Sobreviva por {{ duration }} segundos. O ataque selecionado é automático. Inimigos piscam antes de atirar ou avançar. Os golpes são adaptados para cada parceiro e ficam mais fortes com estágio e treino.</p>
+    <div class="move-list" role="group" aria-label="Selecionar ataque automático">
+      <button v-for="(move, index) in moves" :key="index" class="move-button" type="button" :class="{ selected: selectedMove === index }" :aria-pressed="selectedMove === index" :disabled="paused" @click="selectMove(index)">
+        <strong>{{ move.name }}</strong><small>{{ move.pattern === 'shot' ? 'Disparo' : move.pattern === 'spread' ? 'Rajada' : move.pattern === 'pierce' ? 'Perfuração' : move.pattern === 'burst' ? 'Área' : 'Golpe próximo' }} · {{ (move.cooldownMs / 1000).toFixed(1) }}s</small>
+      </button>
+    </div>
+    <div class="combat-controls">
     <div class="dpad" role="group" aria-label="Direcionais">
       <button
         v-for="direction in directions"
@@ -266,6 +373,9 @@ onUnmounted(() => {
         @contextmenu.prevent
       >{{ direction.symbol }}</button>
     </div>
+    <button type="button" class="dodge-button" :disabled="paused || dodgeCooldown > 0" @click="dodge">ESQUIVAR <small>{{ dodgeCooldown > 0 ? (dodgeCooldown * stepMs / 1000).toFixed(1) + 's' : 'PRONTO' }}</small></button>
+    </div>
+    <p class="arena-tip">Mova-se para direcionar a esquiva. Teclado: 1–3 ou Q escolhe ataque; espaço, F ou Shift esquiva.</p>
     <div class="arena-actions">
       <button type="button" class="arena-action" :disabled="paused" @click="pause">Pausar</button>
       <button type="button" class="arena-action" @click="finish(false)">Sair da batalha</button>
@@ -274,7 +384,10 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.arena-field { height: clamp(210px, 40svh, 360px); }
+.arena-field { height: clamp(190px, 36svh, 340px); }
+.arena-credit { margin:5px 0; font-size:9px!important; }
+.arena-tip { margin:6px 0; }
+@media(max-height:740px){.arena-field{height:29svh;min-height:170px}.arena p{margin:5px 0}.move-list{margin:6px 0}.move-button{min-height:50px}.arena-actions{margin-top:5px}}
 .dpad button { height: 48px; user-select: none; }
 .dpad button.held { background: #527061; color: #fff; }
 .arena-actions { display: flex; justify-content: center; gap: 8px; margin-top: 12px; }
@@ -300,4 +413,37 @@ onUnmounted(() => {
 @media (prefers-reduced-motion: reduce) {
   .fighter .animated-sprite, .fighter .animated-fallback, .enemy .enemy-sprite, .hit { animation: none; }
 }
+
+.move-list { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; margin:12px 0; }
+.move-button { min-height:62px; padding:6px; border:1px solid #405750; border-radius:9px; color:#dfeee3; background:#1c2c30; overflow-wrap:anywhere; }
+.move-button strong,.move-button small { display:block; } .move-button strong { font-size:11px; } .move-button small { font-size:9px; margin-top:4px; color:#9eb6aa; }
+.move-button.selected { border-color:#c7f56b; background:#344b37; box-shadow:inset 0 0 0 1px #c7f56b; }
+.combat-controls { display:flex; justify-content:center; align-items:center; gap:24px; }
+.dodge-button { min-height:72px; min-width:95px; padding:10px; border:1px solid #b2df72; border-radius:14px; color:#eaf7dd; background:#385340; font-weight:700; touch-action:manipulation; }
+.dodge-button small { display:block; font-size:10px; margin-top:5px; }
+.arena-tip { font-size:10px!important; }
+.projectile { position:absolute; width:10px; height:10px; border-radius:50%; transform:translate(-50%,-50%); box-shadow:0 0 8px currentColor; pointer-events:none; }
+.projectile.hostile { width:12px; height:12px; border:2px solid #ffdfc1; }
+.attack-effect { position:absolute; transform:translate(-50%,-50%); border:3px solid; border-radius:50%; opacity:.65; pointer-events:none; }
+.attack-effect.slash { border-style:dashed; clip-path:polygon(50% 50%, 100% 0, 100% 100%); } .enemy-aim { position:absolute; left:50%; top:50%; width:75px; height:2px; background:#ffb96b; transform-origin:left center; opacity:.85; } .enemy.warning:before { content:''; position:absolute; inset:-8px; border:2px dashed #ffb96b; border-radius:50%; animation: warning-pulse .35s ease-in-out infinite alternate; }
+.enemy.shooter .enemy-hp span { background:#ffb76c; } .enemy.charger .enemy-hp span { background:#e79cff; }
+.fighter.dodging { opacity:.55; filter:drop-shadow(0 0 10px #ecffad); }
+@keyframes warning-pulse { from { opacity:.35; transform:scale(.85) } to { opacity:1; transform:scale(1.2) } }
+@media(max-width:360px) { .combat-controls { gap:10px; } .dodge-button { min-width:80px; } }
+@media(prefers-reduced-motion:reduce) { .enemy.warning:before { animation:none; opacity:1; } }
+
+
+@media (orientation:landscape) and (max-height:550px) {
+  .arena { display:grid; grid-template-columns:minmax(0,1fr) minmax(225px,.75fr); gap:5px 12px; align-items:start; }
+  .arena-header { grid-column:1; grid-row:1; }
+  .arena-field { grid-column:1; grid-row:2 / span 5; height:calc(100svh - 140px); min-height:150px; }
+  .arena-health { grid-column:1; grid-row:7; margin-top:0; }
+  .arena-credit { grid-column:1; grid-row:8; }
+  .arena > p:not(.arena-credit):not(.arena-tip) { display:none; }
+  .move-list { grid-column:2; grid-row:1 / span 2; margin:0; }
+  .combat-controls { grid-column:2; grid-row:3; }
+  .arena-tip { grid-column:2; grid-row:4; }
+  .arena-actions { grid-column:2; grid-row:5; margin-top:0; }
+}
+
 </style>
