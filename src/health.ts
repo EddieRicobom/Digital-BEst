@@ -1,5 +1,14 @@
 import { Capacitor } from '@capacitor/core'
-import { Health, type HealthDataType } from '@capgo/capacitor-health'
+import { Health, type HealthDataType, type QueryAggregatedOptions } from '@capgo/capacitor-health'
+
+const metrics = ['steps', 'calories'] as const
+type ActivityMetric = typeof metrics[number]
+export type HealthTotalSource = 'selected' | 'combined' | null
+
+interface ActivityTotal {
+  value: number | null
+  source: HealthTotalSource
+}
 
 export interface HealthResult {
   steps: number | null
@@ -7,10 +16,12 @@ export interface HealthResult {
   day: string
   denied: HealthDataType[]
   failed: HealthDataType[]
+  sources: Record<ActivityMetric, HealthTotalSource>
 }
 
-const metrics = ['steps', 'calories'] as const
+const unavailable: ActivityTotal = { value: null, source: null }
 const sourceSampleLimit = 100
+export const betterMiFitnessSyncPackage = 'com.bettermifitness.sync'
 
 interface ActivitySource {
   name: string
@@ -18,7 +29,7 @@ interface ActivitySource {
 }
 
 export type ActivitySourceResult = {
-  dataType: typeof metrics[number]
+  dataType: ActivityMetric
 } & ({ status: 'read'; sources: ActivitySource[] } | { status: 'denied' | 'failed' })
 
 async function ensureHealthAvailable() {
@@ -35,39 +46,44 @@ function todayRange() {
   return { day, startDate: start.toISOString(), endDate: now.toISOString() }
 }
 
-export async function syncHealth(): Promise<HealthResult> {
+export async function syncHealth(sourceId?: string): Promise<HealthResult> {
   await ensureHealthAvailable()
   const auth = await Health.requestAuthorization({ read: [...metrics] })
   const { day, startDate, endDate } = todayRange()
   const denied = metrics.filter(metric => !auth.readAuthorized.includes(metric))
-  const read = async (dataType: typeof metrics[number]) => {
-    if (!auth.readAuthorized.includes(dataType)) return null
-    if (startDate === endDate) return null
-    const { samples } = await Health.queryAggregated({
+  const read = async (dataType: ActivityMetric): Promise<ActivityTotal> => {
+    if (!auth.readAuthorized.includes(dataType) || startDate === endDate) return unavailable
+    const options: QueryAggregatedOptions = {
       dataType,
       startDate,
       endDate,
       bucket: 'day',
       aggregation: 'sum',
-    })
-    if (!samples.length) return null
+    }
+    let samples = sourceId === undefined ? [] : (await Health.queryAggregated({ ...options, sourceId })).samples
+    const source = samples.length ? 'selected' : 'combined'
+    if (!samples.length) samples = (await Health.queryAggregated(options)).samples
+    if (!samples.length) return unavailable
     if (samples.some(sample => !Number.isFinite(sample.value) || sample.value < 0)) throw new Error('Valor de atividade inválido.')
     const total = samples.reduce((sum, sample) => sum + sample.value, 0)
     if (!Number.isFinite(total)) throw new Error('Total de atividade inválido.')
-    return total
+    return { value: total, source }
   }
   const results = await Promise.allSettled([read('steps'), read('calories')])
   const failed = metrics.filter((_, index) => results[index]?.status === 'rejected')
   if (failed.length > 0 && failed.length + denied.length === metrics.length) {
     throw new Error('Não foi possível ler os dados do Health Connect. Verifique as permissões e tente novamente.')
   }
-  const [steps, calories] = results
+  const [stepsResult, caloriesResult] = results
+  const steps = stepsResult.status === 'fulfilled' ? stepsResult.value : unavailable
+  const calories = caloriesResult.status === 'fulfilled' ? caloriesResult.value : unavailable
   return {
-    steps: steps.status === 'fulfilled' ? steps.value : null,
-    calories: calories.status === 'fulfilled' ? calories.value : null,
+    steps: steps.value,
+    calories: calories.value,
     day,
     denied,
     failed,
+    sources: { steps: steps.source, calories: calories.source },
   }
 }
 

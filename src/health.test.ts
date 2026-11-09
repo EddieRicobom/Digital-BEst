@@ -41,7 +41,7 @@ describe('leitura do Health Connect', () => {
   it('consulta somente os tipos autorizados desde a meia-noite local', async () => {
     authorize.mockResolvedValue({ readAuthorized: ['steps'], readDenied: ['calories'], writeAuthorized: [], writeDenied: [] })
     query.mockResolvedValue(stepResult(0))
-    await expect(syncHealth()).resolves.toEqual({ steps: 0, calories: null, day: '2026-01-02', denied: ['calories'], failed: [] })
+    await expect(syncHealth()).resolves.toEqual({ steps: 0, calories: null, day: '2026-01-02', denied: ['calories'], failed: [], sources: { steps: 'combined', calories: null } })
     expect(query).toHaveBeenCalledExactlyOnceWith({
       dataType: 'steps',
       startDate: new Date(2026, 0, 2).toISOString(),
@@ -57,6 +57,33 @@ describe('leitura do Health Connect', () => {
       throw new Error('Consulta rejeitada')
     })
     await expect(syncHealth()).resolves.toMatchObject({ steps: 123, calories: null, denied: [], failed: ['calories'] })
+  })
+
+  it('prioriza os agregados da fonte selecionada e recorre ao agregado geral por métrica ausente', async () => {
+    const sourceId = 'com.bettermifitness.sync'
+    query.mockImplementation(async options => {
+      if (options.sourceId === sourceId) return options.dataType === 'steps' ? stepResult(0) : { samples: [] }
+      return stepResult(100)
+    })
+
+    await expect(syncHealth(sourceId)).resolves.toMatchObject({ steps: 0, calories: 100, failed: [], sources: { steps: 'selected', calories: 'combined' } })
+    expect(query).toHaveBeenCalledTimes(3)
+    for (const dataType of ['steps', 'calories']) {
+      expect(query).toHaveBeenCalledWith(expect.objectContaining({ dataType, sourceId, aggregation: 'sum', bucket: 'day' }))
+    }
+    expect(query.mock.calls.filter(([options]) => options.sourceId === undefined).map(([options]) => options.dataType)).toEqual(['calories'])
+    expect(readSamples).not.toHaveBeenCalled()
+  })
+
+  it('não recorre ao agregado geral se a consulta da fonte selecionada falhar', async () => {
+    const sourceId = 'com.bettermifitness.sync'
+    query.mockImplementation(async options => {
+      if (options.dataType === 'calories') return stepResult(12)
+      throw new Error('Consulta rejeitada')
+    })
+
+    await expect(syncHealth(sourceId)).resolves.toMatchObject({ steps: null, calories: 12, failed: ['steps'], sources: { steps: null, calories: 'selected' } })
+    expect(query.mock.calls.every(([options]) => options.sourceId === sourceId)).toBe(true)
   })
 
   it('informa a falha quando nenhuma consulta autorizada funciona', async () => {

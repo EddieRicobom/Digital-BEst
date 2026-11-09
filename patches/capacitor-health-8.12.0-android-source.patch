@@ -1,0 +1,83 @@
+--- a/node_modules/@capgo/capacitor-health/android/src/main/java/app/capgo/plugin/health/HealthManager.kt
++++ b/node_modules/@capgo/capacitor-health/android/src/main/java/app/capgo/plugin/health/HealthManager.kt
+@@ -9,6 +9,7 @@
+ import androidx.health.connect.client.request.AggregateGroupByPeriodRequest
+ import androidx.health.connect.client.request.AggregateRequest
+ import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
++import androidx.health.connect.client.records.metadata.DataOrigin
+ import androidx.health.connect.client.records.BasalBodyTemperatureRecord
+ import androidx.health.connect.client.records.BasalMetabolicRateRecord
+ import androidx.health.connect.client.records.BloodGlucoseRecord
+@@ -923,7 +924,8 @@
+         startTime: Instant,
+         endTime: Instant,
+         bucket: String,
+-        aggregations: List<String>
++        aggregations: List<String>,
++        sourceId: String?
+     ): JSObject {
+         // Sleep aggregation is not directly supported like other metrics
+         if (dataType == HealthDataType.SLEEP) {
+@@ -944,6 +946,7 @@
+         requestedAggregations.forEach { validateAggregation(dataType, it) }
+ 
+         val metrics = aggregateMetrics(dataType)
++        val dataOriginFilter = sourceId?.let { setOf(DataOrigin(packageName = it)) } ?: emptySet()
+         val samples = JSArray()
+ 
+         if (bucket == "month") {
+@@ -959,7 +962,8 @@
+                 val aggregateRequest = AggregateGroupByPeriodRequest(
+                     metrics = metrics,
+                     timeRangeFilter = TimeRangeFilter.between(currentStart, currentEnd),
+-                    timeRangeSlicer = Period.ofMonths(1)
++                    timeRangeSlicer = Period.ofMonths(1),
++                    dataOriginFilter = dataOriginFilter
+                 )
+ 
+                 val groupedResults = client.aggregateGroupByPeriod(aggregateRequest)
+@@ -1005,7 +1009,8 @@
+             val aggregateRequest = AggregateGroupByDurationRequest(
+                 metrics = metrics,
+                 timeRangeFilter = TimeRangeFilter.between(currentStart, currentEnd),
+-                timeRangeSlicer = bucketDuration
++                timeRangeSlicer = bucketDuration,
++                dataOriginFilter = dataOriginFilter
+             )
+ 
+             val groupedResults = client.aggregateGroupByDuration(aggregateRequest)
+--- a/node_modules/@capgo/capacitor-health/android/src/main/java/app/capgo/plugin/health/HealthPlugin.kt
++++ b/node_modules/@capgo/capacitor-health/android/src/main/java/app/capgo/plugin/health/HealthPlugin.kt
+@@ -445,6 +445,12 @@
+             return
+         }
+ 
++        val sourceId = call.getString("sourceId")?.trim()
++        if (call.data.has("sourceId") && sourceId.isNullOrEmpty()) {
++            call.reject("sourceId must be a non-empty Android package name")
++            return
++        }
++
+         val bucket = call.getString("bucket") ?: "day"
+         // `aggregation` may be a single string or an array of strings. Fall back to a
+         // sensible per-data-type default when omitted.
+@@ -494,7 +500,7 @@
+         call.launchSafely {
+             val client = getClientOrReject(this) ?: return@launchSafely
+             try {
+-                val result = manager.queryAggregated(client, dataType, startInstant, endInstant, bucket, aggregations)
++                val result = manager.queryAggregated(client, dataType, startInstant, endInstant, bucket, aggregations, sourceId)
+                 resolve(result)
+             } catch (e: CancellationException) {
+                 throw e
+--- a/node_modules/@capgo/capacitor-health/dist/esm/definitions.d.ts
++++ b/node_modules/@capgo/capacitor-health/dist/esm/definitions.d.ts
+@@ -224,6 +224,8 @@
+ export interface QueryAggregatedOptions {
+     /** The type of data to aggregate from the health store. */
+     dataType: HealthDataType;
++    /** Android only: aggregate records written by this package. */
++    sourceId?: string;
+     /** Inclusive ISO 8601 start date (defaults to now - 1 day). */
+     startDate?: string;
+     /** Exclusive ISO 8601 end date (defaults to now). */
