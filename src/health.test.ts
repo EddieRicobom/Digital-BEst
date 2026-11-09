@@ -1,15 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Capacitor } from '@capacitor/core'
-import { Health, type QueryAggregatedResult } from '@capgo/capacitor-health'
-import { syncHealth } from './health'
+import { Health, type HealthSample, type QueryAggregatedResult } from '@capgo/capacitor-health'
+import { readActivitySources, syncHealth } from './health'
 
 vi.mock('@capacitor/core', () => ({ Capacitor: { getPlatform: vi.fn() } }))
 vi.mock('@capgo/capacitor-health', () => ({
-  Health: { isAvailable: vi.fn(), requestAuthorization: vi.fn(), queryAggregated: vi.fn() },
+  Health: { isAvailable: vi.fn(), requestAuthorization: vi.fn(), checkAuthorization: vi.fn(), queryAggregated: vi.fn(), readSamples: vi.fn() },
 }))
 
 const authorize = vi.mocked(Health.requestAuthorization)
 const query = vi.mocked(Health.queryAggregated)
+const checkAuthorization = vi.mocked(Health.checkAuthorization)
+const readSamples = vi.mocked(Health.readSamples)
 const localNoon = new Date(2026, 0, 2, 12)
 
 function stepResult(value: number): QueryAggregatedResult {
@@ -77,5 +79,51 @@ describe('leitura do Health Connect', () => {
     vi.mocked(Capacitor.getPlatform).mockReturnValue('web')
     await expect(syncHealth()).rejects.toThrow('aplicativo Android instalado')
     expect(Health.isAvailable).not.toHaveBeenCalled()
+  })
+})
+
+describe('diagnóstico de fontes do Health Connect', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    vi.useFakeTimers()
+    vi.setSystemTime(localNoon)
+    vi.mocked(Capacitor.getPlatform).mockReturnValue('android')
+    vi.mocked(Health.isAvailable).mockResolvedValue({ available: true })
+    checkAuthorization.mockResolvedValue({ readAuthorized: ['steps', 'calories'], readDenied: [], writeAuthorized: [], writeDenied: [] })
+  })
+
+  afterEach(() => vi.useRealTimers())
+
+  it('limita as leituras ao dia local e retorna apenas nomes e IDs por métrica', async () => {
+    const sample: HealthSample = {
+      dataType: 'steps', value: 20, unit: 'count', startDate: localNoon.toISOString(), endDate: localNoon.toISOString(),
+      sourceName: 'Mi Band', sourceId: 'com.xiaomi.wearable',
+    }
+    readSamples.mockImplementation(async ({ dataType }) => ({ samples: dataType === 'steps'
+      ? [sample, { ...sample, value: 40 }, { ...sample, sourceName: undefined, sourceId: 'android' }]
+      : [] }))
+
+    await expect(readActivitySources()).resolves.toEqual([
+      { dataType: 'steps', status: 'read', sources: [{ name: 'Mi Band', id: 'com.xiaomi.wearable' }, { name: null, id: 'android' }] },
+      { dataType: 'calories', status: 'read', sources: [] },
+    ])
+    expect(checkAuthorization).toHaveBeenCalledExactlyOnceWith({ read: ['steps', 'calories'] })
+    expect(readSamples).toHaveBeenCalledTimes(2)
+    for (const dataType of ['steps', 'calories']) {
+      expect(readSamples).toHaveBeenCalledWith({ dataType, startDate: new Date(2026, 0, 2).toISOString(), endDate: localNoon.toISOString(), limit: 100, ascending: false })
+    }
+    expect(authorize).not.toHaveBeenCalled()
+    expect(query).not.toHaveBeenCalled()
+  })
+
+  it('distingue falta de autorização de falha de leitura', async () => {
+    checkAuthorization.mockResolvedValue({ readAuthorized: ['steps'], readDenied: ['calories'], writeAuthorized: [], writeDenied: [] })
+    readSamples.mockRejectedValue(new Error('Consulta rejeitada'))
+
+    await expect(readActivitySources()).resolves.toEqual([
+      { dataType: 'steps', status: 'failed' },
+      { dataType: 'calories', status: 'denied' },
+    ])
+    expect(readSamples).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ dataType: 'steps' }))
   })
 })
