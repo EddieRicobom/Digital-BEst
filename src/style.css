@@ -41,3 +41,14 @@ nav .active{background:#26382f;border-radius:10px}
 .secondary-battle{width:100%;min-height:48px;margin-top:10px;border:1px solid #41564c;border-radius:10px;background:#243a33;color:#d9f3bf;font-weight:700;letter-spacing:.06em}
 
 .evolutions img.evolution-silhouette{filter:brightness(0);background:transparent}
+
+/* The egg remains in the save until the hatching animation completes. */
+.egg-symbol.hatching{animation:egg-hatch 2.4s ease-in-out both}
+@keyframes egg-hatch{0%,100%{transform:rotate(0) scale(1)} 15%,45%,75%{transform:rotate(-8deg) scale(1.03)} 30%,60%,85%{transform:rotate(8deg) scale(1.06)} 95%{transform:scale(1.13);filter:brightness(1.5)}}
+@media (prefers-reduced-motion:reduce){.egg-symbol.hatching{animation:none}}
+
+.sprite-wrap > .animated-sprite,.sprite-wrap > .animated-fallback{height:165px;max-height:100%;max-width:75%;filter:drop-shadow(0 10px 4px #345a3a33)}
+@media(min-width:650px){.sprite-wrap > .animated-sprite,.sprite-wrap > .animated-fallback{height:200px}}
+
+.egg-display{display:grid;place-items:center;height:160px;margin:25px auto}.egg-display .animated-sprite{height:150px}.egg-display.hatching{animation:egg-hatch 2.4s ease-in-out both}
+@media (prefers-reduced-motion:reduce){.egg-display.hatching{animation:none}}

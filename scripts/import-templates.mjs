@@ -1,14 +1,48 @@
 import { gunzipSync } from 'node:zlib'
-import { writeFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { createSpriteStrip } from './sprite-strip.mjs'
+
 const origin = 'https://dim.digitallink.games'
-const catalog = await (await fetch(`${origin}/catalog/card-catalog.json`)).json()
+const sprites = process.argv.includes('--sprites')
+const anniversary = '843b04f90bb09dbd'
+const optionalBabyFrames = [3, 4, 5, 6, 7, 10, 11]
+const catalogResponse = await fetch(`${origin}/catalog/card-catalog.json`)
+if (!catalogResponse.ok) throw new Error('Catálogo Digital Link indisponível')
+const catalog = await catalogResponse.json()
 const cards = catalog.cards.filter(c => c.type === 'BEM' && !c.isNonDigimon && c.characters.some(x => x.stage === 0))
 const templates = []
+let spriteCount = 0
+
 for (const card of cards) {
   const response = await fetch(origin + card.templateUrl)
-  if (!response.ok) throw Error(`Template indisponível: ${card.cardName}`)
+  if (!response.ok) throw new Error(`Template indisponível: ${card.cardName}`)
   const data = JSON.parse(gunzipSync(Buffer.from(await response.arrayBuffer())).toString())
-  templates.push({ id: card.id, name: card.cardName, characters: card.characters.filter(c => c.selectable).map(c => ({ index: c.index, name: c.name, stage: c.stage, previewUrl: c.previewUrl })), evolutions: data.transformations.entries.map(({from,to,minutes,vital,trophies,battles,winRatio,adventureLevel})=>({from,to,minutes,vital,trophies,battles,winRatio,adventureLevel})) })
+  const characters = card.characters.filter(c => c.selectable)
+  templates.push({
+    id: card.id,
+    name: card.cardName,
+    author: card.author,
+    characters: characters.map(({ index, name, stage, previewUrl }) => ({ index, name, stage, previewUrl })),
+    evolutions: data.transformations.entries.map(({ from, to, minutes, vital, trophies, battles, winRatio, adventureLevel }) => ({ from, to, minutes, vital, trophies, battles, winRatio, adventureLevel })),
+  })
+
+  if (!sprites || card.id === anniversary) continue
+  if (data.version !== 1 || data.type !== 'BEM') throw new Error(`Formato de sprites inesperado: ${card.cardName}`)
+  const { entries, packedPixels } = data.sprites
+  const pixels = Buffer.from(packedPixels, 'base64')
+  const directory = new URL(`../public/assets/sprites/${card.id}/`, import.meta.url)
+  await mkdir(directory, { recursive: true })
+  const egg = createSpriteStrip(pixels, entries.slice(2, 10), 32, 40, 8)
+  await writeFile(new URL('egg.png', directory), egg)
+  spriteCount++
+  for (const { index, stage } of characters) {
+    // Each BEM character has a name image, 12 animation frames and splash art.
+    const firstFrame = 54 + index * 14 + 1
+    const strip = createSpriteStrip(pixels, entries.slice(firstFrame, firstFrame + 12), 64, 56, 12, stage < 2 ? optionalBabyFrames : [])
+    await writeFile(new URL(`${index}.png`, directory), strip)
+    spriteCount++
+  }
 }
-await writeFile('src/templates.json', JSON.stringify(templates))
+await writeFile(new URL('../src/templates.json', import.meta.url), JSON.stringify(templates))
 console.log(`${templates.length} templates importados`)
+if (sprites) console.log(`${spriteCount} tiras de sprites geradas`)

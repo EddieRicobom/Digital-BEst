@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import AnimatedSprite from './AnimatedSprite.vue'
 
-const props = defineProps<{ sprite: string; power: number; stamina: number }>()
+const props = defineProps<{ sprite: string; sheet?: string; baby?: boolean; power: number; stamina: number }>()
 const emit = defineEmits<{ finish: [won: boolean] }>()
 
 type Position = { x: number; y: number }
 type Enemy = Position & { id: number; hp: number; maxHp: number }
-type Hit = Position & { expires: number }
+type Hit = Position & { expires: number; enemyId: number }
 type Direction = 'up' | 'left' | 'down' | 'right'
 type PointerInput = { direction: Direction; startedAt: number }
 
@@ -33,7 +34,6 @@ const defeated = ref(0)
 const paused = ref(false)
 const arena = ref<HTMLElement>()
 const resumeButton = ref<HTMLButtonElement>()
-const playerSpriteFailed = ref(false)
 const enemySpriteFailed = ref(false)
 const enemySprite = 'https://dim.digitallink.games/api/sprites/Qie1bpWEWBvBmrE3dvFV/preview'
 const keys = ref(new Map<string, Direction>())
@@ -49,7 +49,6 @@ let animationId = 0
 let previousTime = 0
 let accumulatedTime = 0
 
-watch(() => props.sprite, () => { playerSpriteFailed.value = false })
 
 function keydown(event: KeyboardEvent) {
   if (!playing || paused.value || event.altKey || event.ctrlKey || event.metaKey ||
@@ -173,7 +172,7 @@ function tick() {
   if (hit.value?.expires === frame) hit.value = undefined
   if (frame % 40 === 0 && nearest) {
     nearest.hp -= 1 + props.power * .1
-    hit.value = { x: nearest.x, y: nearest.y, expires: frame + 8 }
+    hit.value = { x: nearest.x, y: nearest.y, expires: frame + 8, enemyId: nearest.id }
     if (nearest.hp <= 0) {
       const index = enemies.value.indexOf(nearest)
       enemies.value.splice(index, 1)
@@ -229,16 +228,15 @@ onUnmounted(() => {
       <strong>{{ time }}s</strong>
       <span>{{ defeated }} DERROTADOS</span>
     </div>
-    <div class="arena-field">
-      <div v-for="enemy in enemies" :key="enemy.id" class="enemy" :style="{ left: enemy.x + '%', top: enemy.y + '%' }">
+    <div class="arena-field" :class="{ 'is-paused': paused }">
+      <div v-for="enemy in enemies" :key="enemy.id" class="enemy" :class="{ struck: hit?.enemyId === enemy.id }" :style="{ left: enemy.x + '%', top: enemy.y + '%', '--enemy-delay': (enemy.id % 5) * -.12 + 's' }">
         <img v-if="!enemySpriteFailed" :src="enemySprite" alt="" draggable="false" @error="enemySpriteFailed = true">
         <span v-else class="unit-marker enemy-marker" aria-hidden="true"></span>
         <div class="enemy-hp"><span :style="{ width: 100 * enemy.hp / enemy.maxHp + '%' }"></span></div>
       </div>
-      <div v-if="hit" class="hit" :style="{ left: hit.x + '%', top: hit.y + '%' }"></div>
-      <div class="fighter" :style="{ left: player.x + '%', top: player.y + '%' }">
-        <img v-if="sprite && !playerSpriteFailed" :src="sprite" alt="Parceiro" draggable="false" @error="playerSpriteFailed = true">
-        <span v-else class="unit-marker" role="img" aria-label="Parceiro"></span>
+      <div v-if="hit" class="hit" aria-hidden="true" :style="{ left: hit.x + '%', top: hit.y + '%' }"></div>
+      <div class="fighter" :class="{ moving: heldDirections.size > 0, attacking: !!hit }" :style="{ left: player.x + '%', top: player.y + '%' }">
+        <AnimatedSprite :sheet="sheet" :fallback="sprite" label="Parceiro" :frames="hit ? (baby ? [0, 8] : [0, 10]) : heldDirections.size ? (baby ? [0, 2] : [2, 3]) : [0, 1]" :paused="paused" :interval="120" />
       </div>
       <div v-if="paused" class="pause-screen">
         <strong>Batalha pausada</strong>
@@ -286,4 +284,20 @@ onUnmounted(() => {
 .pause-screen { position: absolute; inset: 0; display: grid; place-content: center; gap: 10px; text-align: center; background: #111b25e6; }
 .unit-marker { display: block; width: 28px; height: 28px; margin: 10px auto; border: 2px solid #fff; border-radius: 50%; background: #c5f76a; }
 .enemy-marker { background: #ff877d; }
+.fighter .animated-sprite, .fighter .animated-fallback { transform-origin: 50% 90%; animation: fighter-idle 1.5s ease-in-out infinite; }
+.fighter.moving .animated-sprite, .fighter.moving .animated-fallback { animation: fighter-move .32s ease-in-out infinite alternate; }
+.fighter.attacking .animated-sprite, .fighter.attacking .animated-fallback { animation: fighter-attack .16s ease-out; }
+.enemy img { transform-origin: 50% 90%; animation: enemy-move .55s ease-in-out var(--enemy-delay) infinite alternate; }
+.enemy.struck img { animation: enemy-hit .16s ease-out; }
+.hit { pointer-events: none; animation: hit-flash .16s ease-out both; }
+.is-paused .fighter .animated-sprite, .is-paused .fighter .animated-fallback, .is-paused .enemy img, .is-paused .hit { animation-play-state: paused; }
+@keyframes fighter-idle { 50% { transform: translateY(-2px); } }
+@keyframes fighter-move { from { transform: translateY(0) rotate(-4deg); } to { transform: translateY(-3px) rotate(4deg); } }
+@keyframes fighter-attack { 45% { transform: translateY(-4px) scale(1.12, .9); } }
+@keyframes enemy-move { from { transform: rotate(-3deg); } to { transform: translateY(-2px) rotate(3deg); } }
+@keyframes enemy-hit { 35% { transform: scale(.85, 1.12); filter: brightness(1.8); } }
+@keyframes hit-flash { from { opacity: 1; transform: translate(-50%, -50%) scale(.5); } to { opacity: 0; transform: translate(-50%, -50%) scale(2); } }
+@media (prefers-reduced-motion: reduce) {
+  .fighter .animated-sprite, .fighter .animated-fallback, .enemy img, .hit { animation: none; }
+}
 </style>
