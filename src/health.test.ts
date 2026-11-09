@@ -94,7 +94,7 @@ describe('diagnóstico de fontes do Health Connect', () => {
 
   afterEach(() => vi.useRealTimers())
 
-  it('limita as leituras ao dia local e retorna apenas nomes e IDs por métrica', async () => {
+  it('limita as leituras ao dia local e retorna rótulos de fontes por métrica', async () => {
     const sample: HealthSample = {
       dataType: 'steps', value: 20, unit: 'count', startDate: localNoon.toISOString(), endDate: localNoon.toISOString(),
       sourceName: 'Mi Band', sourceId: 'com.xiaomi.wearable',
@@ -104,7 +104,7 @@ describe('diagnóstico de fontes do Health Connect', () => {
       : [] }))
 
     await expect(readActivitySources()).resolves.toEqual([
-      { dataType: 'steps', status: 'read', sources: [{ name: 'Mi Band', id: 'com.xiaomi.wearable' }, { name: null, id: 'android' }] },
+      { dataType: 'steps', status: 'read', sources: [{ name: 'Mi Band', detail: 'com.xiaomi.wearable' }, { name: 'Este celular (Health Connect)', detail: null }] },
       { dataType: 'calories', status: 'read', sources: [] },
     ])
     expect(checkAuthorization).toHaveBeenCalledExactlyOnceWith({ read: ['steps', 'calories'] })
@@ -114,6 +114,22 @@ describe('diagnóstico de fontes do Health Connect', () => {
     }
     expect(authorize).not.toHaveBeenCalled()
     expect(query).not.toHaveBeenCalled()
+  })
+
+  it('identifica a fonte nativa do celular sem expor seu identificador técnico', async () => {
+    const sourceId = 'com.android.healthconnect.phone.jd5bdd37e1a8d3667a05d0abebfc4a89e'
+    readSamples.mockImplementation(async ({ dataType }) => ({
+      samples: [{
+        dataType, value: 20, unit: 'count', startDate: localNoon.toISOString(), endDate: localNoon.toISOString(),
+        sourceId,
+        sourceName: dataType === 'steps' ? ' POCO F7 ' : sourceId,
+      }],
+    }))
+
+    await expect(readActivitySources()).resolves.toEqual([
+      { dataType: 'steps', status: 'read', sources: [{ name: 'Este celular (Health Connect)', detail: 'POCO F7' }] },
+      { dataType: 'calories', status: 'read', sources: [{ name: 'Este celular (Health Connect)', detail: null }] },
+    ])
   })
 
   it('distingue falta de autorização de falha de leitura', async () => {

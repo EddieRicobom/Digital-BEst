@@ -72,7 +72,8 @@ function evolve(e: Evolution) { if (!canEvolve.value || game.value.vital < 500 |
       <template v-else><section class="panel"><span class="eyebrow">HEALTH CONNECT</span><h2>Seu movimento tem poder</h2><p>Conecte o Health Connect para ler os passos e as calorias ativas de hoje. O progresso é calculado no aparelho; nenhum dado de saúde é enviado pelo app para um servidor próprio.</p><div class="health-grid"><div><small>PASSOS HOJE</small><strong>{{ game.steps === null ? '—' : Math.round(game.steps).toLocaleString('pt-BR') }}</strong></div><div><small>CALORIAS ATIVAS</small><strong>{{ game.calories === null ? '—' : Math.round(game.calories).toLocaleString('pt-BR') }} <em v-if="game.calories !== null">kcal</em></strong></div></div><button class="primary" :disabled="syncing" @click="sync">{{ syncing ? 'SINCRONIZANDO…' : 'CONECTAR E SINCRONIZAR' }}</button><p class="muted">{{ game.updated ? 'Última sincronização: ' + new Date(game.updated).toLocaleString('pt-BR') : 'Ainda não sincronizado.' }} A disponibilidade depende do Mi Fitness e das permissões. Sem dados, exibimos —.</p><ol><li>Sincronize a Mi Band com o Mi Fitness.</li><li>Conecte o Mi Fitness ao Health Connect e permita compartilhar passos e calorias ativas.</li><li>Toque no botão acima e autorize a leitura no Android.</li></ol><p class="muted">A sincronização acontece ao tocar no botão. O jogo não lê dados em segundo plano.</p></section>
         <section class="panel">
           <h3>Fontes de atividade</h3>
-          <p class="muted">Consulte uma amostra de até 100 registros de hoje por tipo no Health Connect. A lista pode ser parcial. Os totais seguem as prioridades de fontes do Health Connect.</p>
+          <p class="muted">A lista mostra as fontes de até 100 registros de hoje por tipo de atividade no Health Connect. O Mi Fitness pode ter permissão para gravar dados e ainda assim ficar fora da amostra. Confira as permissões do Mi Fitness no Health Connect.</p>
+          <p class="muted">Os totais seguem as prioridades de fontes do Health Connect.</p>
           <button type="button" class="secondary-battle" :disabled="readingSources" @click="inspectActivitySources">{{ readingSources ? 'CONSULTANDO…' : 'CONSULTAR FONTES' }}</button>
           <div aria-live="polite">
             <p v-if="sourceError" class="notice">{{ sourceError }}</p>
@@ -82,9 +83,9 @@ function evolve(e: Evolution) { if (!canEvolve.value || game.value.vital < 500 |
               <p v-else-if="result.status === 'failed'" class="muted">Não foi possível consultar esta fonte de dados.</p>
               <template v-else-if="result.status === 'read'">
                 <ul v-if="result.sources.length">
-                  <li v-for="source in result.sources" :key="JSON.stringify([source.name, source.id])" style="overflow-wrap: anywhere">
-                    {{ source.name || source.id || 'Origem não identificada' }}
-                    <small v-if="source.name && source.id && source.name !== source.id">({{ source.id }})</small>
+                  <li v-for="source in result.sources" :key="JSON.stringify([source.name, source.detail])" style="overflow-wrap: anywhere">
+                    {{ source.name }}
+                    <small v-if="source.detail"> · {{ source.detail }}</small>
                   </li>
                 </ul>
                 <p v-else class="muted">Nenhum registro de hoje encontrado na consulta.</p>

@@ -13,8 +13,8 @@ const metrics = ['steps', 'calories'] as const
 const sourceSampleLimit = 100
 
 interface ActivitySource {
-  name: string | null
-  id: string | null
+  name: string
+  detail: string | null
 }
 
 export type ActivitySourceResult = {
@@ -84,7 +84,11 @@ export async function readActivitySources(): Promise<ActivitySourceResult[]> {
       for (const sample of samples) {
         const name = sample.sourceName?.trim() || null
         const id = sample.sourceId?.trim() || null
-        sources.set(JSON.stringify([name, id]), { name, id })
+        const phone = id?.startsWith('com.android.healthconnect.phone.') || (dataType === 'steps' && id === 'android')
+        const source = phone
+          ? { name: 'Este celular (Health Connect)', detail: name === id ? null : name }
+          : { name: name || id || 'Origem não identificada', detail: name && id && name !== id ? id : null }
+        sources.set(JSON.stringify([source.name, source.detail]), source)
       }
       return { dataType, status: 'read', sources: [...sources.values()] }
     } catch {

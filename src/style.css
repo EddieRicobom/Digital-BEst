@@ -15,6 +15,7 @@ button:not(:disabled):active{transform:scale(.98)}
 button:disabled{cursor:not-allowed}
 .app-shell{padding-bottom:calc(105px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)))}
 .topbar{padding-top:var(--safe-area-inset-top, env(safe-area-inset-top, 0px));height:calc(77px + var(--safe-area-inset-top, env(safe-area-inset-top, 0px)))}
+body::before{content:"";position:fixed;inset:0 0 auto;height:var(--safe-area-inset-top, env(safe-area-inset-top, 0px));background:#080d15;z-index:1000;pointer-events:none}
 main{min-width:0}
 .heading{gap:12px;align-items:flex-start}
 .heading h1{overflow-wrap:anywhere}
