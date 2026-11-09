@@ -34,8 +34,7 @@ const defeated = ref(0)
 const paused = ref(false)
 const arena = ref<HTMLElement>()
 const resumeButton = ref<HTMLButtonElement>()
-const enemySpriteFailed = ref(false)
-const enemySprite = 'https://dim.digitallink.games/api/sprites/Qie1bpWEWBvBmrE3dvFV/preview'
+const enemySheet = `${import.meta.env.BASE_URL}assets/sprites/enemy-greymon.png`
 const keys = ref(new Map<string, Direction>())
 const pointers = ref(new Map<number, PointerInput>())
 const heldDirections = computed(() => new Set([
@@ -230,8 +229,7 @@ onUnmounted(() => {
     </div>
     <div class="arena-field" :class="{ 'is-paused': paused }">
       <div v-for="enemy in enemies" :key="enemy.id" class="enemy" :class="{ struck: hit?.enemyId === enemy.id }" :style="{ left: enemy.x + '%', top: enemy.y + '%', '--enemy-delay': (enemy.id % 5) * -.12 + 's' }">
-        <img v-if="!enemySpriteFailed" :src="enemySprite" alt="" draggable="false" @error="enemySpriteFailed = true">
-        <span v-else class="unit-marker enemy-marker" aria-hidden="true"></span>
+        <span class="enemy-sprite" aria-hidden="true" :style="{ backgroundImage: `url(${enemySheet})` }"></span>
         <div class="enemy-hp"><span :style="{ width: 100 * enemy.hp / enemy.maxHp + '%' }"></span></div>
       </div>
       <div v-if="hit" class="hit" aria-hidden="true" :style="{ left: hit.x + '%', top: hit.y + '%' }"></div>
@@ -250,6 +248,7 @@ onUnmounted(() => {
       </div>
       <strong>{{ player.hp }}/{{ maxHp }}</strong>
     </div>
+    <p class="arena-credit">Sprite do adversário: EvilGavin · Digital Link</p>
     <p>Sobreviva por {{ duration }} segundos. Use as setas, WASD ou os botões para desviar. Os ataques são automáticos.</p>
     <div class="dpad" role="group" aria-label="Direcionais">
       <button
@@ -287,17 +286,18 @@ onUnmounted(() => {
 .fighter .animated-sprite, .fighter .animated-fallback { transform-origin: 50% 90%; animation: fighter-idle 1.5s ease-in-out infinite; }
 .fighter.moving .animated-sprite, .fighter.moving .animated-fallback { animation: fighter-move .32s ease-in-out infinite alternate; }
 .fighter.attacking .animated-sprite, .fighter.attacking .animated-fallback { animation: fighter-attack .16s ease-out; }
-.enemy img { transform-origin: 50% 90%; animation: enemy-move .55s ease-in-out var(--enemy-delay) infinite alternate; }
-.enemy.struck img { animation: enemy-hit .16s ease-out; }
+.enemy .enemy-sprite { display:block; width:100%; height:100%; image-rendering:pixelated; background-size:1200% 100%; background-repeat:no-repeat; background-position:18.1818% 0; transform-origin:50% 90%; animation: enemy-frames .5s steps(1) var(--enemy-delay) infinite, enemy-move .55s ease-in-out var(--enemy-delay) infinite alternate; }
+.enemy.struck .enemy-sprite { animation: enemy-hit .16s ease-out; }
 .hit { pointer-events: none; animation: hit-flash .16s ease-out both; }
-.is-paused .fighter .animated-sprite, .is-paused .fighter .animated-fallback, .is-paused .enemy img, .is-paused .hit { animation-play-state: paused; }
+.is-paused .fighter .animated-sprite, .is-paused .fighter .animated-fallback, .is-paused .enemy .enemy-sprite, .is-paused .hit { animation-play-state: paused; }
 @keyframes fighter-idle { 50% { transform: translateY(-2px); } }
 @keyframes fighter-move { from { transform: translateY(0) rotate(-4deg); } to { transform: translateY(-3px) rotate(4deg); } }
 @keyframes fighter-attack { 45% { transform: translateY(-4px) scale(1.12, .9); } }
+@keyframes enemy-frames { 50% { background-position:27.2727% 0; } }
 @keyframes enemy-move { from { transform: rotate(-3deg); } to { transform: translateY(-2px) rotate(3deg); } }
 @keyframes enemy-hit { 35% { transform: scale(.85, 1.12); filter: brightness(1.8); } }
 @keyframes hit-flash { from { opacity: 1; transform: translate(-50%, -50%) scale(.5); } to { opacity: 0; transform: translate(-50%, -50%) scale(2); } }
 @media (prefers-reduced-motion: reduce) {
-  .fighter .animated-sprite, .fighter .animated-fallback, .enemy img, .hit { animation: none; }
+  .fighter .animated-sprite, .fighter .animated-fallback, .enemy .enemy-sprite, .hit { animation: none; }
 }
 </style>
