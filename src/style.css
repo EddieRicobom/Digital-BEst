@@ -38,3 +38,5 @@ nav .active{background:#26382f;border-radius:10px}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation-duration:.01ms!important;animation-iteration-count:1!important}}
 
 .secondary-battle{width:100%;min-height:48px;margin-top:10px;border:1px solid #41564c;border-radius:10px;background:#243a33;color:#d9f3bf;font-weight:700;letter-spacing:.06em}
+
+.evolutions img.evolution-silhouette{filter:brightness(0);background:transparent}
