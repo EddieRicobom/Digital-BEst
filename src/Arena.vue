@@ -12,7 +12,6 @@ type Hit = Position & { expires: number; enemyId: number }
 type Projectile = Position & { id: number; vx: number; vy: number; remaining: number; damage: number; color: string; hostile: boolean; piercing: boolean; hitIds: number[] }
 type Effect = Position & { id: number; expires: number; radius: number; color: string; kind: 'burst' | 'slash'; angle: number }
 type Direction = 'up' | 'left' | 'down' | 'right'
-type PointerInput = { direction: Direction; startedAt: number }
 
 const directions = [
   { id: 'up', label: 'Mover para cima', symbol: '▲' },
@@ -58,13 +57,19 @@ const enemySheets = {
   charger: `${import.meta.env.BASE_URL}assets/sprites/enemy-greymon.png`,
 }
 const keys = ref(new Map<string, Direction>())
-const pointers = ref(new Map<number, PointerInput>())
-const heldDirections = computed(() => new Set([
-  ...keys.value.values(),
-  ...Array.from(pointers.value.values(), input => input.direction),
-]))
+const joystick = ref({ x: 0, y: 0 })
+const joystickElement = ref<HTMLElement>()
+let joystickPointer: number | undefined
+const heldDirections = computed(() => new Set(keys.value.values()))
+const movement = computed(() => {
+  const held = heldDirections.value
+  const x = Number(held.has('right')) - Number(held.has('left')) + joystick.value.x
+  const y = Number(held.has('down')) - Number(held.has('up')) + joystick.value.y
+  const length = Math.hypot(x, y)
+  return length > 1 ? { x: x / length, y: y / length } : { x, y }
+})
 const idleFrames = [0, 1], babyWalkFrames = [0, 2], babyAttackFrames = [0, 8], walkFrames = [2, 3], attackFrames = [0, 10]
-const fighterFrames = computed(() => attacking.value ? (props.baby ? babyAttackFrames : attackFrames) : heldDirections.value.size ? (props.baby ? babyWalkFrames : walkFrames) : idleFrames)
+const fighterFrames = computed(() => attacking.value ? (props.baby ? babyAttackFrames : attackFrames) : Math.hypot(movement.value.x, movement.value.y) > 0 ? (props.baby ? babyWalkFrames : walkFrames) : idleFrames)
 let playing = true
 let frame = 0
 let nextId = 1
@@ -92,17 +97,33 @@ function keyup(event: KeyboardEvent) {
   keys.value.delete(event.key.toLowerCase())
 }
 
-function holdDirection(event: PointerEvent, direction: Direction) {
-  if (event.button !== 0 || paused.value || !playing) return
-  if (!(event.currentTarget instanceof HTMLButtonElement)) return
-  event.currentTarget.setPointerCapture(event.pointerId)
-  pointers.value.set(event.pointerId, { direction, startedAt: frame })
+function updateJoystick(event: PointerEvent) {
+  const rect = joystickElement.value?.getBoundingClientRect()
+  if (!rect) return
+  const radius = Math.min(rect.width, rect.height) * .35
+  let x = (event.clientX - (rect.left + rect.width / 2)) / radius
+  let y = (event.clientY - (rect.top + rect.height / 2)) / radius
+  const length = Math.hypot(x, y)
+  if (length > 1) { x /= length; y /= length }
+  joystick.value = length < .08 ? { x: 0, y: 0 } : { x, y }
 }
-
-function releaseDirection(event: PointerEvent) {
-  const input = pointers.value.get(event.pointerId)
-  pointers.value.delete(event.pointerId)
-  if (event.type === 'pointerup' && input?.startedAt === frame) nudge(input.direction, .24)
+function startJoystick(event: PointerEvent) {
+  if (event.button !== 0 || paused.value || !playing || joystickPointer !== undefined) return
+  joystickPointer = event.pointerId
+  joystickElement.value?.setPointerCapture(event.pointerId)
+  updateJoystick(event)
+}
+function moveJoystick(event: PointerEvent) {
+  if (event.pointerId === joystickPointer) updateJoystick(event)
+}
+function resetJoystick() {
+  const pointer = joystickPointer
+  joystickPointer = undefined
+  joystick.value = { x: 0, y: 0 }
+  if (pointer !== undefined && joystickElement.value?.hasPointerCapture(pointer)) joystickElement.value.releasePointerCapture(pointer)
+}
+function endJoystick(event: PointerEvent) {
+  if (event.pointerId === joystickPointer) resetJoystick()
 }
 
 function movePlayer(dx: number, dy: number, distance: number) {
@@ -117,15 +138,10 @@ function nudge(direction: Direction, distance: number) {
   movePlayer(dx, dy, distance)
 }
 
-function tapDirection(event: MouseEvent, direction: Direction) {
-  // Native keyboard and assistive activations emit a click without a pointer.
-  if (event.detail === 0 && !paused.value && playing) nudge(direction, 1.2)
-}
-
 function stopLoop() {
   cancelAnimationFrame(animationId)
   keys.value.clear()
-  pointers.value.clear()
+  resetJoystick()
 }
 
 function startLoop() {
@@ -158,12 +174,16 @@ function finish(won: boolean) {
   emit('finish', won)
 }
 
+function pointerAction(event: PointerEvent, action: () => void) {
+  if (event.button === 0) action()
+}
+function keyboardAction(event: MouseEvent, action: () => void) {
+  if (event.detail === 0) action()
+}
 function selectMove(index: number) { if (!paused.value && playing && moves.value[index]) selectedMove.value = index }
 function dodge() {
   if (!playing || paused.value || dodgeCooldown.value > 0) return
-  const held = heldDirections.value
-  const dx = Number(held.has('right')) - Number(held.has('left'))
-  const dy = Number(held.has('down')) - Number(held.has('up'))
+  const { x: dx, y: dy } = movement.value
   const length = Math.hypot(dx, dy)
   dodgeDirection = length ? { x: dx / length, y: dy / length } : { ...facing }
   dodgeFrames.value = 16
@@ -219,12 +239,10 @@ function tick() {
   if (attacking.value && frame >= lastAttack) attacking.value = false
   if (attackCooldown.value > 0) attackCooldown.value--
   if (dodgeCooldown.value > 0) dodgeCooldown.value--
-  const held = heldDirections.value
-  const dx = Number(held.has('right')) - Number(held.has('left'))
-  const dy = Number(held.has('down')) - Number(held.has('up'))
+  const { x: dx, y: dy } = movement.value
   const invulnerable = dodgeFrames.value > 0
   if (invulnerable) { movePlayer(dodgeDirection.x, dodgeDirection.y, .85); dodgeFrames.value-- }
-  else if (dx || dy) { const length = Math.hypot(dx, dy); facing = { x: dx / length, y: dy / length }; movePlayer(dx, dy, .24) }
+  else if (dx || dy) { const length = Math.hypot(dx, dy); facing = { x: dx / length, y: dy / length }; movePlayer(dx, dy, .24 * Math.min(length, 1)) }
 
   if (frame % 115 === 5 && enemies.value.length < 16) spawnEnemy()
   let nearest: Enemy | undefined
@@ -334,7 +352,7 @@ onUnmounted(() => {
       <div v-for="shot in projectiles" :key="shot.id" class="projectile" :class="{ hostile: shot.hostile }" :style="{left: shot.x + '%', top: shot.y + '%', background: shot.color}"></div>
       <div v-for="effect in effects" :key="effect.id" class="attack-effect" :class="effect.kind" :style="{left: effect.x + '%', top: effect.y + '%', width: effect.radius * 2 + '%', height: effect.radius * 2 + '%', borderColor: effect.color, transform: `translate(-50%,-50%) rotate(${effect.angle}deg)`}"></div>
       <div v-if="hit" class="hit" aria-hidden="true" :style="{ left: hit.x + '%', top: hit.y + '%' }"></div>
-      <div class="fighter" :class="{ moving: heldDirections.size > 0, attacking: attacking, dodging: dodgeFrames > 0 }" :style="{ left: player.x + '%', top: player.y + '%' }">
+      <div class="fighter" :class="{ moving: Math.hypot(movement.x, movement.y) > 0, attacking: attacking, dodging: dodgeFrames > 0 }" :style="{ left: player.x + '%', top: player.y + '%' }">
         <AnimatedSprite :sheet="sheet" :fallback="sprite" label="Parceiro" :frames="fighterFrames" :paused="paused" :interval="120" />
       </div>
       <div v-if="paused" class="pause-screen">
@@ -352,30 +370,25 @@ onUnmounted(() => {
     <p class="arena-credit">Sprites: templates BEM e Greymon por EvilGavin · Digital Link</p>
     <p>Sobreviva por {{ duration }} segundos. O ataque selecionado é automático. Inimigos piscam antes de atirar ou avançar. Os golpes são adaptados para cada parceiro e ficam mais fortes com estágio e treino.</p>
     <div class="move-list" role="group" aria-label="Selecionar ataque automático">
-      <button v-for="(move, index) in moves" :key="index" class="move-button" type="button" :class="{ selected: selectedMove === index }" :aria-pressed="selectedMove === index" :disabled="paused" @click="selectMove(index)">
+      <button v-for="(move, index) in moves" :key="index" class="move-button" type="button" :class="{ selected: selectedMove === index }" :aria-pressed="selectedMove === index" :disabled="paused" @pointerdown.stop.prevent="pointerAction($event, () => selectMove(index))" @click="keyboardAction($event, () => selectMove(index))">
         <strong>{{ move.name }}</strong><small>{{ move.pattern === 'shot' ? 'Disparo' : move.pattern === 'spread' ? 'Rajada' : move.pattern === 'pierce' ? 'Perfuração' : move.pattern === 'burst' ? 'Área' : 'Golpe próximo' }} · {{ (move.cooldownMs / 1000).toFixed(1) }}s</small>
       </button>
     </div>
     <div class="combat-controls">
-    <div class="dpad" role="group" aria-label="Direcionais">
-      <button
-        v-for="direction in directions"
-        :key="direction.id"
-        type="button"
-        :class="[direction.id, { held: heldDirections.has(direction.id) }]"
-        :aria-label="direction.label"
-        :disabled="paused"
-        @pointerdown.prevent="holdDirection($event, direction.id)"
-        @pointerup="releaseDirection"
-        @pointercancel="releaseDirection"
-        @lostpointercapture="releaseDirection"
-        @click="tapDirection($event, direction.id)"
-        @contextmenu.prevent
-      >{{ direction.symbol }}</button>
+    <div class="movement-controls">
+      <div ref="joystickElement" class="joystick" :class="{ disabled: paused }"
+        aria-hidden="true" @pointerdown.prevent="startJoystick" @pointermove.prevent="moveJoystick"
+        @pointerup="endJoystick" @pointercancel="endJoystick" @lostpointercapture="endJoystick" @contextmenu.prevent>
+        <span class="joystick-knob" :style="{ transform: `translate(calc(-50% + ${joystick.x * 70}%), calc(-50% + ${joystick.y * 70}%))` }"></span>
+      </div>
+      <div class="accessible-directions" role="group" aria-label="Movimento por botões">
+        <button v-for="direction in directions" :key="direction.id" type="button" :aria-label="direction.label"
+          :disabled="paused" @click="nudge(direction.id, 1.2)">{{ direction.symbol }}</button>
+      </div>
     </div>
-    <button type="button" class="dodge-button" :disabled="paused || dodgeCooldown > 0" @click="dodge">ESQUIVAR <small>{{ dodgeCooldown > 0 ? (dodgeCooldown * stepMs / 1000).toFixed(1) + 's' : 'PRONTO' }}</small></button>
+    <button type="button" class="dodge-button" :disabled="paused || dodgeCooldown > 0" @pointerdown.stop.prevent="pointerAction($event, dodge)" @click="keyboardAction($event, dodge)">ESQUIVAR <small>{{ dodgeCooldown > 0 ? (dodgeCooldown * stepMs / 1000).toFixed(1) + 's' : 'PRONTO' }}</small></button>
     </div>
-    <p class="arena-tip">Mova-se para direcionar a esquiva. Teclado: 1–3 ou Q escolhe ataque; espaço, F ou Shift esquiva.</p>
+    <p class="arena-tip">Arraste o controle para mover; quanto mais longe do centro, mais rápido. Teclado: setas ou WASD movem; 1–3 ou Q escolhe ataque; espaço, F ou Shift esquiva.</p>
     <div class="arena-actions">
       <button type="button" class="arena-action" :disabled="paused" @click="pause">Pausar</button>
       <button type="button" class="arena-action" @click="finish(false)">Sair da batalha</button>
@@ -388,8 +401,13 @@ onUnmounted(() => {
 .arena-credit { margin:5px 0; font-size:9px!important; }
 .arena-tip { margin:6px 0; }
 @media(max-height:740px){.arena-field{height:29svh;min-height:170px}.arena p{margin:5px 0}.move-list{margin:6px 0}.move-button{min-height:50px}.arena-actions{margin-top:5px}}
-.dpad button { height: 48px; user-select: none; }
-.dpad button.held { background: #527061; color: #fff; }
+.movement-controls { position:relative; }
+.joystick { position:relative; width:140px; height:140px; border:2px solid #729a79; border-radius:50%; background:radial-gradient(circle, #3c5849 0 34%, #213533 35% 100%); touch-action:none; user-select:none; }
+.joystick.disabled { opacity:.5; }
+.joystick-knob { position:absolute; left:50%; top:50%; width:50%; height:50%; border:2px solid #d5efbb; border-radius:50%; background:#668b67; box-shadow:0 3px 8px #0008; pointer-events:none; }
+.accessible-directions { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+.accessible-directions:focus-within { display:flex; position:absolute; bottom:100%; left:0; width:auto; height:auto; overflow:visible; clip-path:none; gap:4px; z-index:4; }
+.accessible-directions button { min-width:44px; min-height:44px; border:1px solid #527061; border-radius:6px; color:#d5efbb; background:#263a3b; }
 .arena-actions { display: flex; justify-content: center; gap: 8px; margin-top: 12px; }
 .arena-action { min-height: 44px; padding: 6px 12px; border: 1px solid #527061; border-radius: 8px; background: #263a3b; color: #d5efbb; }
 .arena button:disabled { opacity: .5; }
