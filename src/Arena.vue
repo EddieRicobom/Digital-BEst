@@ -45,9 +45,9 @@ const emit = defineEmits<{ finish: [result: boolean | ArenaBattleResult] }>()
 
 type Position = { x: number; y: number }
 type EnemyKind = 'pursuer' | 'shooter' | 'charger' | 'boss'
-type Enemy = Position & { id: number; hp: number; maxHp: number; kind: EnemyKind; cooldown: number; windup: number; radialAttack: boolean; charge: number; vx: number; vy: number }
+type Enemy = Position & { id: number; hp: number; maxHp: number; kind: EnemyKind; cooldown: number; windup: number; radialAttack: boolean; charge: number; vx: number; vy: number; chillUntil: number; stunUntil: number; stunImmuneUntil: number; burnUntil: number; poisonUntil: number; exposedUntil: number; lastHitFrame: number }
 type Hit = Position & { expires: number; enemyId: number }
-type Projectile = Position & { id: number; vx: number; vy: number; remaining: number; damage: number; color: string; hostile: boolean; piercing: boolean; hitIds: number[]; visual?: ArenaMoveVisual }
+type Projectile = Position & { id: number; vx: number; vy: number; remaining: number; damage: number; color: string; hostile: boolean; piercing: boolean; radius: number; hitIds: number[]; visual?: ArenaMoveVisual }
 type Effect = Position & { id: number; expires: number; radius: number; color: string; kind: 'burst' | 'slash'; angle: number; visual: ArenaMoveVisual }
 type Direction = 'up' | 'left' | 'down' | 'right'
 
@@ -77,13 +77,34 @@ const guardians = [
   { name: 'Amphimon', sheet: '2704968a7410c870/14.png', hp: 52, fan: 3, spacing: .14, radial: 14, cooldown: 115, rageCooldown: 88, color: '#80e0ff' },
 ]
 const upgrades = [
-  { id: 'power', name: 'Sobrecarga', description: '+30% do dano base dos golpes' },
-  { id: 'cadence', name: 'Recarga rápida', description: '−18% do tempo base entre golpes' },
-  { id: 'range', name: 'Alcance ampliado', description: '+5 de alcance em todos os golpes' },
-  { id: 'cannon', name: 'Canhão auxiliar', description: 'Acrescenta um disparo perfurante a cada golpe. Repetir aumenta o dano.' },
-  { id: 'repair', name: 'Reparo de emergência', description: 'Recupera 35% do HP máximo dos Digimon vivos' },
+  { id: 'power', name: 'Sobrecarga', description: '+30% do dano base por nível', max: 4 },
+  { id: 'cadence', name: 'Recarga rápida', description: '−18% do tempo base entre golpes por nível', max: 4 },
+  { id: 'range', name: 'Alcance ampliado', description: '+5 de alcance por nível', max: 4 },
+  { id: 'cannon', name: 'Canhão auxiliar', description: 'Um disparo perfurante extra por golpe; mais níveis aumentam seu dano', max: 3 },
+  { id: 'precision', name: 'Precisão crítica', description: 'Todo terceiro golpe causa +50% de dano por nível', max: 2 },
+  { id: 'blast', name: 'Detonação', description: 'Acertos ferem outros inimigos próximos; área cresce por nível', max: 3 },
+  { id: 'arc', name: 'Arco elétrico', description: 'Acertos saltam para até um inimigo adicional por nível', max: 3 },
+  { id: 'push', name: 'Impacto', description: 'Acertos empurram o alvo para longe do Digimon', max: 3 },
+  { id: 'chill', name: 'Geada', description: 'Acertos reduzem a velocidade do alvo por 1 segundo; lentidão cresce por nível', max: 3 },
+  { id: 'burn', name: 'Brasa persistente', description: 'Acertos queimam o alvo por 1 segundo; dano cresce por nível', max: 3 },
+  { id: 'poison', name: 'Veneno digital', description: 'Acertos envenenam o alvo por 2 segundos; dano cresce por nível', max: 3 },
+  { id: 'execute', name: 'Golpe final', description: 'Acertos causam mais dano a alvos abaixo de 30% de HP', max: 3 },
+  { id: 'combo', name: 'Combo', description: 'Acertos seguidos no mesmo alvo causam dano crescente', max: 3 },
+  { id: 'frenzy', name: 'Ímpeto', description: 'Derrotar inimigo antecipa a próxima recarga', max: 3 },
+  { id: 'expose', name: 'Ponto fraco', description: 'Acertos deixam o alvo vulnerável por 2 segundos', max: 3 },
+  { id: 'echo', name: 'Eco', description: 'Acertos repetem parte do dano após 0,2 segundo', max: 3 },
+  { id: 'nova', name: 'Onda de choque', description: 'Todo quarto golpe atinge inimigos próximos ao Digimon', max: 3 },
+  { id: 'sweep', name: 'Varredura', description: 'Acertos também ferem outro inimigo próximo ao alvo', max: 3 },
+  { id: 'stun', name: 'Atordoamento', description: 'Acertos interrompem inimigos; todos ganham imunidade temporária e chefes resistem mais', max: 3 },
+  { id: 'battery', name: 'Carga acumulada', description: 'Golpes ganham dano conforme o tempo desde o golpe anterior', max: 3 },
+  { id: 'multishot', name: 'Disparo duplo', description: 'Cada golpe lança dois projéteis diagonais extras', max: 3 },
+  { id: 'penetrate', name: 'Perfuração', description: 'Projéteis atravessam inimigos; golpes de área lançam um projétil perfurante', max: 1 },
+  { id: 'orbit', name: 'Rajada radial', description: 'Cada golpe lança projéteis em quatro direções', max: 3 },
+  { id: 'aftershock', name: 'Réplica', description: 'Cada acerto cria uma pequena onda de dano no alvo após 0,2 segundo', max: 3 },
+  { id: 'wide', name: 'Golpe amplo', description: 'Amplia a área dos golpes e a colisão dos projéteis', max: 3 },
 ] as const
 type Upgrade = typeof upgrades[number]
+type UpgradeId = Upgrade['id']
 const areaNumber = computed(() => {
   const level = props.areaLevel ?? 0
   return Number.isFinite(level) ? Math.max(0, Math.floor(level)) : 0
@@ -96,7 +117,12 @@ const waveDefeated = ref(0)
 let waveSpawned = 0
 let nextSpawnFrame = 5
 const upgradeChoices = ref<Upgrade[]>([])
-const upgradeRanks = ref({ power: 0, cadence: 0, range: 0, cannon: 0 })
+const upgradeRanks = ref(Object.fromEntries(upgrades.map(upgrade => [upgrade.id, 0])) as Record<UpgradeId, number>)
+const pendingEchoes: { enemyId: number; x: number; y: number; due: number; damage: number; radius: number }[] = []
+let attackCount = 0
+let previousAttackFrame = -1000
+let previousTargetId = -1
+let comboCount = 0
 const upgradePanel = ref<HTMLElement>()
 
 function fighterState(stamina: number, baseHp?: number) {
@@ -119,7 +145,8 @@ const projectiles = ref<Projectile[]>([])
 const effects = ref<Effect[]>([])
 const moves = computed(() => arenaMoves(activeMember.value?.name ?? props.partner ?? '', activeMember.value?.stage ?? props.stage ?? 2, activeMember.value ? activeMember.value.templateId : props.templateId))
 const activeMove = computed(() => moves.value[fighter.value.selectedMove]!)
-const attackRange = computed(() => activeMove.value.range + upgradeRanks.value.range * 5)
+const attackRange = computed(() => activeMove.value.range + upgradeRanks.value.range * 5 +
+  (activeMove.value.pattern === 'burst' || activeMove.value.pattern === 'slash' ? 2 * upgradeRanks.value.wide : 0))
 const distanceToTarget = ref(Infinity)
 const targetInRange = computed(() => distanceToTarget.value <= attackRange.value)
 const dodgeCooldown = ref(0)
@@ -271,7 +298,7 @@ function finish(won: boolean) {
 }
 
 function offerUpgrade() {
-  const options = [...upgrades]
+  const options = upgrades.filter(upgrade => upgradeRanks.value[upgrade.id] < upgrade.max)
   upgradeChoices.value = Array.from({ length: 3 }, () => options.splice(Math.floor(Math.random() * options.length), 1)[0]!)
   projectiles.value = []
   effects.value = []
@@ -281,11 +308,8 @@ function offerUpgrade() {
 
 function chooseUpgrade(upgrade: Upgrade) {
   if (!playing || document.hidden || !upgradeChoices.value.some(choice => choice.id === upgrade.id)) return
-  if (upgrade.id === 'repair') {
-    for (const member of roster.value.length ? roster.value : [solo.value]) {
-      if (member.hp > 0) member.hp = Math.min(member.maxHp, member.hp + Math.ceil(member.maxHp * .35))
-    }
-  } else upgradeRanks.value[upgrade.id]++
+  if (upgradeRanks.value[upgrade.id] >= upgrade.max) return
+  upgradeRanks.value[upgrade.id]++
   waveIndex.value++
   waveDefeated.value = 0
   waveSpawned = 0
@@ -322,7 +346,8 @@ function spawnEnemy(kind: EnemyKind, hp: number) {
   const edgePosition = Math.random() * 100
   enemies.value.push({ id: nextId++, x: side === 0 ? 0 : side === 1 ? 100 : edgePosition,
     y: side === 2 ? 0 : side === 3 ? 100 : edgePosition, hp, maxHp: hp,
-    kind, cooldown: 40 + Math.floor(Math.random() * 70), windup: 0, radialAttack: false, charge: 0, vx: 0, vy: 0 })
+    kind, cooldown: 40 + Math.floor(Math.random() * 70), windup: 0, radialAttack: false, charge: 0, vx: 0, vy: 0,
+    chillUntil: 0, stunUntil: 0, stunImmuneUntil: 0, burnUntil: 0, poisonUntil: 0, exposedUntil: 0, lastHitFrame: -1000 })
 }
 
 function spawnOpponents() {
@@ -346,15 +371,63 @@ function spawnOpponents() {
     spawnEnemy('boss', guardian.value.hp + areaDifficulty.value * 5)
   }
 }
-function harmEnemy(enemy: Enemy, damage: number) {
+function harmEnemy(enemy: Enemy, damage: number, proc = true) {
+  if (enemy.hp <= 0) return
+  const ranks = upgradeRanks.value
+  if (proc) {
+    if (enemy.hp / enemy.maxHp < .3) damage *= 1 + .3 * ranks.execute
+    if (enemy.exposedUntil > frame) damage *= 1 + .15 * ranks.expose
+    if (enemy.id === previousTargetId && frame - enemy.lastHitFrame < 100) comboCount = Math.min(3, comboCount + 1)
+    else comboCount = 0
+    previousTargetId = enemy.id
+    enemy.lastHitFrame = frame
+    damage *= 1 + .12 * ranks.combo * comboCount
+  }
   enemy.hp -= damage
   hit.value = { x: enemy.x, y: enemy.y, expires: frame + 8, enemyId: enemy.id }
+  if (!proc) return
+  if (ranks.push) {
+    const dx = enemy.x - player.value.x, dy = enemy.y - player.value.y
+    const distance = Math.hypot(dx, dy) || 1
+    const push = (enemy.kind === 'boss' ? .45 : 1.5) * ranks.push
+    enemy.x = Math.max(2, Math.min(98, enemy.x + dx / distance * push))
+    enemy.y = Math.max(2, Math.min(98, enemy.y + dy / distance * push))
+  }
+  if (ranks.chill) enemy.chillUntil = Math.max(enemy.chillUntil, frame + 50)
+  if (ranks.stun && enemy.stunImmuneUntil <= frame) {
+    enemy.stunUntil = frame + (enemy.kind === 'boss' ? 2 : 5 * ranks.stun)
+    enemy.stunImmuneUntil = frame + (enemy.kind === 'boss' ? 150 : 45)
+    enemy.windup = 0; enemy.charge = 0
+  }
+  if (ranks.burn) enemy.burnUntil = Math.max(enemy.burnUntil, frame + 50)
+  if (ranks.poison) enemy.poisonUntil = Math.max(enemy.poisonUntil, frame + 100)
+  if (ranks.expose) enemy.exposedUntil = Math.max(enemy.exposedUntil, frame + 100)
+  if (ranks.echo && pendingEchoes.length < 64) pendingEchoes.push({ enemyId: enemy.id, x: enemy.x, y: enemy.y, due: frame + 10, damage: damage * .2 * ranks.echo, radius: 0 })
+  if (ranks.aftershock && pendingEchoes.length < 64) pendingEchoes.push({ enemyId: enemy.id, x: enemy.x, y: enemy.y, due: frame + 10, damage: damage * .2 * ranks.aftershock, radius: 5 + 2 * ranks.aftershock })
+  if (ranks.blast) for (const other of enemies.value) {
+    if (other !== enemy && other.hp > 0 && Math.hypot(other.x - enemy.x, other.y - enemy.y) <= 5 + 2 * ranks.blast)
+      harmEnemy(other, damage * .25, false)
+  }
+  if (ranks.arc) {
+    const reached = new Set([enemy.id])
+    let origin = enemy
+    for (let jump = 0; jump < ranks.arc; jump++) {
+      const next = enemies.value.filter(other => other.hp > 0 && !reached.has(other.id) && Math.hypot(other.x - origin.x, other.y - origin.y) <= 18)
+        .sort((a, b) => Math.hypot(a.x - origin.x, a.y - origin.y) - Math.hypot(b.x - origin.x, b.y - origin.y))[0]
+      if (!next) break
+      harmEnemy(next, damage * .35, false); reached.add(next.id); origin = next
+    }
+  }
+  if (ranks.sweep) {
+    const next = enemies.value.find(other => other !== enemy && other.hp > 0 && Math.hypot(other.x - enemy.x, other.y - enemy.y) <= 6 + 2 * ranks.sweep)
+    if (next) harmEnemy(next, damage * .25 * ranks.sweep, false)
+  }
 }
 function shoot(x: number, y: number, dx: number, dy: number, damage: number, range: number, color: string, hostile = false, piercing = false, visual?: ArenaMoveVisual) {
   const length = Math.hypot(dx, dy) || 1
   const speed = hostile ? .32 : .8
   projectiles.value.push({ id: nextId++, x, y, vx: dx / length * speed, vy: dy / length * speed,
-    remaining: range, damage, color, hostile, piercing, hitIds: [], visual })
+    remaining: range, damage, color, hostile, piercing, radius: hostile ? 4.5 : 5 + 1.5 * upgradeRanks.value.wide, hitIds: [], visual })
 }
 
 function bossEnraged(enemy: Enemy) {
@@ -377,12 +450,12 @@ function releaseEnemyAttack(enemy: Enemy) {
 }
 
 function moveCooldown(cooldownMs: number) {
-  return cooldownMs * (1 - .18 * upgradeRanks.value.cadence)
+  return cooldownMs * Math.max(.28, 1 - .18 * upgradeRanks.value.cadence)
 }
 
 function attack(nearest: Enemy) {
   const move = activeMove.value
-  const range = attackRange.value
+  const range = activeMove.value.range + upgradeRanks.value.range * 5
   const dx = nearest.x - player.value.x, dy = nearest.y - player.value.y
   const magnitude = Math.hypot(dx, dy)
   const ux = magnitude ? dx / magnitude : facing.x, uy = magnitude ? dy / magnitude : facing.y
@@ -391,29 +464,58 @@ function attack(nearest: Enemy) {
   const stage = activeMember.value?.stage ?? props.stage ?? 2
   const ap = activeMember.value?.baseAttack
   const basePower = ap && Number.isFinite(ap) && ap > 0 ? Math.min(2.2, Math.max(.9, ap / 1000)) : 1 + Math.max(0, Math.min(stage, 6)) * .16
+  attackCount++
+  const battery = Math.min(150, frame - previousAttackFrame)
+  previousAttackFrame = frame
   const damage = move.power * (1 + Math.min(power, 100) * .10) * basePower * (1 + .30 * upgradeRanks.value.power)
+    * (1 + (attackCount % 3 === 0 ? .5 * upgradeRanks.value.precision : 0))
+    * (1 + battery / 150 * .25 * upgradeRanks.value.battery)
   fighter.value.nextAttackFrame = frame + Math.max(1, Math.round(moveCooldown(move.cooldownMs) / stepMs))
   lastAttack = frame + 10
   attacking.value = true
   if (move.pattern === 'burst' || move.pattern === 'slash') {
-    const radius = range
+    const radius = attackRange.value
     effects.value.push({ id: nextId++, x: player.value.x, y: player.value.y, expires: frame + 14, radius, color: move.color, kind: move.pattern, angle: Math.atan2(uy, ux) * 180 / Math.PI, visual: move.visual })
     for (const enemy of enemies.value) {
       const ex = enemy.x - player.value.x, ey = enemy.y - player.value.y
       const d = Math.hypot(ex, ey)
-      if (d <= radius && (move.pattern === 'burst' || d === 0 || (ex * ux + ey * uy) / d >= Math.SQRT1_2)) harmEnemy(enemy, damage)
+      if (enemy.hp > 0 && d <= radius && (move.pattern === 'burst' || d === 0 || (ex * ux + ey * uy) / d >= Math.max(.35, Math.SQRT1_2 - .1 * upgradeRanks.value.wide))) harmEnemy(enemy, damage)
     }
   } else if (move.pattern === 'spread') {
     for (const angle of [-.24, 0, .24]) {
       const c = Math.cos(angle), sin = Math.sin(angle)
-      shoot(player.value.x, player.value.y, ux * c - uy * sin, ux * sin + uy * c, damage, range, move.color, false, false, move.visual)
+      shoot(player.value.x, player.value.y, ux * c - uy * sin, ux * sin + uy * c, damage, range, move.color, false, upgradeRanks.value.penetrate > 0, move.visual)
     }
-  } else shoot(player.value.x, player.value.y, ux, uy, damage, range, move.color, false, move.pattern === 'pierce', move.visual)
+  } else shoot(player.value.x, player.value.y, ux, uy, damage, range, move.color, false, move.pattern === 'pierce' || upgradeRanks.value.penetrate > 0, move.visual)
+  if (upgradeRanks.value.penetrate && (move.pattern === 'burst' || move.pattern === 'slash'))
+    shoot(player.value.x, player.value.y, ux, uy, damage * .4, range, move.color, false, true, move.visual)
+  if (upgradeRanks.value.multishot) for (const angle of [-.32, .32]) {
+    const c = Math.cos(angle), s = Math.sin(angle)
+    shoot(player.value.x, player.value.y, ux * c - uy * s, ux * s + uy * c, damage * .22 * upgradeRanks.value.multishot, range, move.color, false, false, move.visual)
+  }
+  if (upgradeRanks.value.orbit) for (let index = 0; index < 4; index++) {
+    const angle = index * Math.PI / 2
+    shoot(player.value.x, player.value.y, Math.cos(angle), Math.sin(angle), damage * .15 * upgradeRanks.value.orbit, Math.min(range, 28), move.color, false, false, move.visual)
+  }
   if (upgradeRanks.value.cannon > 0)
     shoot(player.value.x, player.value.y, ux, uy, damage * .45 * upgradeRanks.value.cannon, Math.max(range, 38), '#84f7ee', false, true)
+  if (upgradeRanks.value.nova && attackCount % 4 === 0) for (const enemy of enemies.value) {
+    if (enemy.hp > 0 && Math.hypot(enemy.x - player.value.x, enemy.y - player.value.y) <= 10 + 3 * upgradeRanks.value.nova)
+      harmEnemy(enemy, damage * .3 * upgradeRanks.value.nova, false)
+  }
 }
 function tick() {
   frame++
+  for (let index = pendingEchoes.length - 1; index >= 0; index--) {
+    const echo = pendingEchoes[index]!
+    if (echo.due > frame) continue
+    const enemy = enemies.value.find(candidate => candidate.id === echo.enemyId)
+    if (echo.radius) {
+      effects.value.push({ id: nextId++, x: echo.x, y: echo.y, expires: frame + 10, radius: echo.radius, color: '#e0b4ff', kind: 'burst', angle: 0, visual: 'shockwave' })
+      for (const other of enemies.value) if (other.hp > 0 && Math.hypot(other.x - echo.x, other.y - echo.y) <= echo.radius) harmEnemy(other, echo.damage, false)
+    } else if (enemy) harmEnemy(enemy, echo.damage, false)
+    pendingEchoes.splice(index, 1)
+  }
   if (attacking.value && frame >= lastAttack) attacking.value = false
   if (dodgeCooldown.value > 0) dodgeCooldown.value--
   const { x: dx, y: dy } = movement.value
@@ -425,17 +527,25 @@ function tick() {
   let nearest: Enemy | undefined
   let nearestDistance = Infinity
   for (const enemy of enemies.value) {
+    if (frame % 10 === 0 && enemy.hp > 0) {
+      if (enemy.burnUntil > frame) harmEnemy(enemy, .10 * upgradeRanks.value.burn, false)
+      if (enemy.poisonUntil > frame) harmEnemy(enemy, .07 * upgradeRanks.value.poison, false)
+    }
     const ex = player.value.x - enemy.x, ey = player.value.y - enemy.y
     const distance = Math.hypot(ex, ey), ux = ex / (distance || 1), uy = ey / (distance || 1)
+    if (enemy.hp <= 0) continue
     if (enemy.cooldown > 0) enemy.cooldown--
-    if (enemy.windup > 0) {
+    if (enemy.stunUntil > frame) {
+      // Stunned enemies cannot move or complete an attack.
+    } else if (enemy.windup > 0) {
       enemy.windup--
       if (enemy.windup === 0) releaseEnemyAttack(enemy)
     } else if (enemy.charge > 0) {
-      enemy.x += enemy.vx * .55; enemy.y += enemy.vy * .55; enemy.charge--
+      const speed = enemy.chillUntil > frame ? Math.max(.25, 1 - .15 * upgradeRanks.value.chill) : 1
+      enemy.x += enemy.vx * .55 * speed; enemy.y += enemy.vy * .55 * speed; enemy.charge--
     } else {
       const stoppingDistance = enemy.kind === 'boss' ? 23 : enemy.kind === 'shooter' ? 28 : 0
-      const speed = props.adventure ? .17 + areaDifficulty.value * .004 : enemy.kind === 'charger' ? .065 : .058
+      const speed = (props.adventure ? .17 + areaDifficulty.value * .004 : enemy.kind === 'charger' ? .065 : .058) * (enemy.chillUntil > frame ? Math.max(.25, 1 - .15 * upgradeRanks.value.chill) : 1)
       if (distance > stoppingDistance) {
         enemy.x += ux * Math.min(distance, speed); enemy.y += uy * Math.min(distance, speed)
       }
@@ -470,7 +580,7 @@ function tick() {
       }
     } else {
       for (const enemy of enemies.value) {
-        if (enemy.hp > 0 && !shot.hitIds.includes(enemy.id) && Math.hypot(shot.x - enemy.x, shot.y - enemy.y) < (enemy.kind === 'boss' ? 8 : 5)) {
+        if (enemy.hp > 0 && !shot.hitIds.includes(enemy.id) && Math.hypot(shot.x - enemy.x, shot.y - enemy.y) < (enemy.kind === 'boss' ? shot.radius + 3 : shot.radius)) {
           harmEnemy(enemy, shot.damage); shot.hitIds.push(enemy.id)
           if (!shot.piercing) { shot.remaining = 0; break }
         }
@@ -484,6 +594,10 @@ function tick() {
     const kills = enemies.value.length - alive.length
     defeated.value += kills
     if (props.adventure) waveDefeated.value += kills
+    if (upgradeRanks.value.frenzy) {
+      const advanceBy = Math.min(30, 5 * upgradeRanks.value.frenzy * kills)
+      for (const member of roster.value.length ? roster.value : [solo.value]) member.nextAttackFrame = Math.max(frame, member.nextAttackFrame - advanceBy)
+    }
     enemies.value = alive
   }
   if (!props.adventure && frame % 50 === 0) time.value--
@@ -547,7 +661,7 @@ onUnmounted(() => {
       <span>{{ adventure && wave ? `${waveDefeated}/${wave.count}` : defeated }} DERROTADOS</span>
     </div>
     <div ref="field" class="arena-field" :class="{ 'is-paused': suspended }">
-      <div v-for="enemy in enemies" :key="enemy.id" class="enemy" :class="[enemy.kind, { struck: hit?.enemyId === enemy.id, warning: enemy.windup > 0, enraged: bossEnraged(enemy) }]" :style="{ left: enemy.x + '%', top: enemy.y + '%', '--enemy-delay': (enemy.id % 5) * -.12 + 's' }">
+      <div v-for="enemy in enemies" :key="enemy.id" class="enemy" :class="[enemy.kind, { struck: hit?.enemyId === enemy.id, warning: enemy.windup > 0, enraged: bossEnraged(enemy), chilled: enemy.chillUntil > frame, stunned: enemy.stunUntil > frame, burning: enemy.burnUntil > frame, poisoned: enemy.poisonUntil > frame, exposed: enemy.exposedUntil > frame }]" :style="{ left: enemy.x + '%', top: enemy.y + '%', '--enemy-delay': (enemy.id % 5) * -.12 + 's' }">
         <span v-if="enemy.windup > 0 && !enemy.radialAttack" class="enemy-aim" aria-hidden="true" :style="{ transform: `rotate(${Math.atan2(enemy.vy, enemy.vx * fieldAspect)}rad)` }"></span>
         <span class="enemy-sprite" aria-hidden="true" :class="{ 'is-cel-shaded': enemySheets[enemy.kind].celShaded }" :style="{ backgroundImage: enemySheets[enemy.kind].backgroundImage }"></span>
         <div v-if="enemy.kind !== 'boss'" class="enemy-hp"><span :style="{ width: 100 * enemy.hp / enemy.maxHp + '%' }"></span></div>

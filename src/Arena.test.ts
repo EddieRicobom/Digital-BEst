@@ -204,7 +204,48 @@ describe('equipe da arena', () => {
 })
 
 describe('expedição Survivor', () => {
+  it('oferece upgrades ofensivos e cria réplica mesmo quando o acerto derrota o alvo', async () => {
+    let roll = 0
+    vi.mocked(Math.random).mockImplementation(() => new Error().stack?.includes('offerUpgrade') ? [.94, 0, 0][roll++] ?? 0 : .5)
+    app = createApp(Arena, { adventure: true, team: [member('0', 'Agumon', { power: 100, stamina: 200 })] })
+    app.mount(host); await nextTick()
+    advance(1600); await nextTick()
+    const choices = [...host.querySelectorAll<HTMLButtonElement>('.upgrade-button')]
+    expect(choices).toHaveLength(3)
+    expect(new Set(choices.map(choice => choice.textContent))).toHaveProperty('size', 3)
+    expect(host.querySelector('.upgrade-screen')?.textContent).not.toMatch(/Reparo|Recupera.*HP|Roubo de vida/i)
+    button('Réplica').click(); await nextTick()
+    let echoedAfterKill = false
+    for (let tick = 0; tick < 900 && !echoedAfterKill; tick++) {
+      advance(1); await nextTick()
+      const kills = Number(host.querySelector('.arena-header span:last-child')?.textContent?.match(/\d+/)?.[0])
+      echoedAfterKill = kills > 0 && Boolean(host.querySelector('.attack-effect.fx-shockwave'))
+    }
+    expect(echoedAfterKill).toBe(true)
+  })
+
+  it('disparo duplo adiciona projéteis a um golpe de área', async () => {
+    let roll = 0
+    vi.mocked(Math.random).mockImplementation(() => new Error().stack?.includes('offerUpgrade') ? [.82, 0, 0][roll++] ?? 0 : .5)
+    app = createApp(Arena, { adventure: true, team: [member('0', 'Agumon', { power: 100, stamina: 200 })] })
+    app.mount(host); await nextTick()
+    advance(1600); await nextTick()
+    button('Disparo duplo').click(); await nextTick()
+    const areaMove = [...host.querySelectorAll<HTMLButtonElement>('.move-button')].find(choice => /Círculo de Chamas|Onda|Explosão/.test(choice.textContent ?? ''))
+    expect(areaMove).toBeDefined()
+    areaMove!.click()
+    let spawnedProjectiles = false
+    for (let tick = 0; tick < 600 && !spawnedProjectiles; tick++) {
+      advance(1); await nextTick()
+      spawnedProjectiles = host.querySelectorAll('.projectile:not(.hostile)').length >= 2
+    }
+    expect(spawnedProjectiles).toBe(true)
+  })
+
   it('abre a área zero, pausa para melhorias e só registra vitória após o chefe', async () => {
+    let upgradeRoll = 0
+    const rolls = [.06, .11, .06]
+    vi.mocked(Math.random).mockImplementation(() => new Error().stack?.includes('offerUpgrade') ? rolls[upgradeRoll++ % rolls.length]! : .5)
     const finish = vi.fn()
     const team = [
       member('0', 'Agumon', { power: 100, stamina: 200 }),
@@ -324,7 +365,7 @@ describe('expedição Survivor', () => {
     app.mount(host); await nextTick()
     for (let wave = 0; wave < 3; wave++) {
       advance(2000); await nextTick()
-      button('Alcance ampliado').click()
+      host.querySelector<HTMLButtonElement>('.upgrade-button')!.click()
     }
     advance(45); await nextTick()
     const boss = host.querySelector('.boss-hp')
