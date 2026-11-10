@@ -22,7 +22,7 @@ describe('estatísticas BEM', () => {
   })
 
   it('cobre todos os personagens batalháveis dos templates importados', () => {
-    for (const template of templates) {
+    for (const template of templates.filter(template => template.type === 'BEM')) {
       for (const { index, stage, name } of template.characters) {
         const stats = getBemStats(template.id, index)
         if (stage < 2) {

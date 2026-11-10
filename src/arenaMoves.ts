@@ -7,6 +7,8 @@ export interface ArenaMove {
   name: string
   category: ArenaMoveCategory
   pattern: ArenaMovePattern
+  visual: ArenaMoveVisual
+  visualLabel: string
   power: number
   range: number
   cooldownMs: number
@@ -33,6 +35,57 @@ const patternStats = {
   slash: { power: 1.55, range: 13, rangeGrowth: 0.6, cooldownMs: 540 },
 } satisfies Record<ArenaMovePattern, { power: number; range: number; rangeGrowth: number; cooldownMs: number }>
 
+interface ArenaMoveStyle {
+  pattern: ArenaMovePattern
+  label: string
+  color: string
+  powerScale: number
+  rangeBonus: number
+  cooldownScale: number
+}
+
+export const arenaMoveStyles = {
+  bubble: { pattern: 'shot', label: 'Bolha', color: '#a7e8ff', powerScale: 0.94, rangeBonus: 0, cooldownScale: 0.93 },
+  fireball: { pattern: 'shot', label: 'Bola de Fogo', color: '#ff914c', powerScale: 1.09, rangeBonus: 0, cooldownScale: 1.11 },
+  spark: { pattern: 'shot', label: 'Faísca', color: '#ffe365', powerScale: 0.90, rangeBonus: 1, cooldownScale: 0.91 },
+  'air-orb': { pattern: 'shot', label: 'Esfera de Ar', color: '#8ef5cd', powerScale: 0.96, rangeBonus: 3, cooldownScale: 1.02 },
+  seed: { pattern: 'shot', label: 'Semente', color: '#b0ed75', powerScale: 1.02, rangeBonus: -2, cooldownScale: 0.97 },
+  'steel-orb': { pattern: 'shot', label: 'Esfera de Aço', color: '#bacbe5', powerScale: 1.12, rangeBonus: -2, cooldownScale: 1.08 },
+
+  'ember-fan': { pattern: 'spread', label: 'Leque de Brasas', color: '#ffad54', powerScale: 1.09, rangeBonus: -1, cooldownScale: 1.08 },
+  'chain-sparks': { pattern: 'spread', label: 'Centelhas Bifurcadas', color: '#fff17e', powerScale: 0.94, rangeBonus: 1, cooldownScale: 0.94 },
+  'tidal-fan': { pattern: 'spread', label: 'Leque de Maré', color: '#75dfff', powerScale: 1.02, rangeBonus: -1, cooldownScale: 0.98 },
+  'feather-volley': { pattern: 'spread', label: 'Salva Flutuante', color: '#b0f9dc', powerScale: 0.91, rangeBonus: 3, cooldownScale: 0.97 },
+  'prism-fan': { pattern: 'spread', label: 'Leque Prismático', color: '#fff1bb', powerScale: 1.05, rangeBonus: 2, cooldownScale: 1.10 },
+  'shard-volley': { pattern: 'spread', label: 'Salva de Estilhaços', color: '#aec7f5', powerScale: 1.12, rangeBonus: -3, cooldownScale: 1.06 },
+
+  'flame-lance': { pattern: 'pierce', label: 'Lança de Fogo', color: '#ff805f', powerScale: 1.08, rangeBonus: -1, cooldownScale: 1.05 },
+  'plasma-beam': { pattern: 'pierce', label: 'Feixe de Plasma', color: '#ffe776', powerScale: 1.04, rangeBonus: 0, cooldownScale: 1.01 },
+  'ice-spear': { pattern: 'pierce', label: 'Lança Elemental', color: '#94e9ff', powerScale: 0.94, rangeBonus: 2, cooldownScale: 0.98 },
+  sunbeam: { pattern: 'pierce', label: 'Raio Solar', color: '#ffed9b', powerScale: 1.10, rangeBonus: 2, cooldownScale: 1.13 },
+  'void-rift': { pattern: 'pierce', label: 'Fenda do Vazio', color: '#c996ff', powerScale: 1.13, rangeBonus: -4, cooldownScale: 1.08 },
+  'rail-shot': { pattern: 'pierce', label: 'Disparo de Trilho', color: '#b9d8ff', powerScale: 0.98, rangeBonus: 4, cooldownScale: 1.06 },
+
+  shockwave: { pattern: 'burst', label: 'Onda de Choque', color: '#ffdf9d', powerScale: 1, rangeBonus: 0, cooldownScale: 1 },
+  eruption: { pattern: 'burst', label: 'Erupção', color: '#ff7d55', powerScale: 1.10, rangeBonus: -1, cooldownScale: 1.08 },
+  'thunder-field': { pattern: 'burst', label: 'Campo de Raios', color: '#ffdb61', powerScale: 1.04, rangeBonus: 2, cooldownScale: 1.10 },
+  whirlpool: { pattern: 'burst', label: 'Redemoinho', color: '#6fdff4', powerScale: 0.96, rangeBonus: 1, cooldownScale: 1.02 },
+  'solar-halo': { pattern: 'burst', label: 'Halo Radiante', color: '#ffe9ad', powerScale: 0.91, rangeBonus: 3, cooldownScale: 1.01 },
+  eclipse: { pattern: 'burst', label: 'Eclipse', color: '#b380ff', powerScale: 1.13, rangeBonus: -3, cooldownScale: 1.09 },
+
+  claw: { pattern: 'slash', label: 'Garra', color: '#ffd99f', powerScale: 0.95, rangeBonus: 0, cooldownScale: 0.94 },
+  'flame-claw': { pattern: 'slash', label: 'Garra de Fogo', color: '#ffa16e', powerScale: 1.08, rangeBonus: -1, cooldownScale: 1.05 },
+  'thunder-fist': { pattern: 'slash', label: 'Punho Elétrico', color: '#ffdc75', powerScale: 1.13, rangeBonus: -2, cooldownScale: 1.08 },
+  crescent: { pattern: 'slash', label: 'Arco Crescente', color: '#a7edf9', powerScale: 1.01, rangeBonus: 1, cooldownScale: 1.06 },
+  'thorn-whip': { pattern: 'slash', label: 'Chicote de Espinhos', color: '#c2f184', powerScale: 0.92, rangeBonus: 3, cooldownScale: 1.04 },
+  'twin-blade': { pattern: 'slash', label: 'Lâminas Gêmeas', color: '#d7e6ff', powerScale: 1.04, rangeBonus: 0, cooldownScale: 1.02 },
+} as const satisfies Record<string, ArenaMoveStyle>
+
+export type ArenaMoveVisual = keyof typeof arenaMoveStyles
+type VisualFor<Pattern extends ArenaMovePattern> = {
+  [Visual in ArenaMoveVisual]: typeof arenaMoveStyles[Visual]['pattern'] extends Pattern ? Visual : never
+}[ArenaMoveVisual]
+
 const alternatives: Record<ArenaMovePattern, readonly [ArenaMovePattern, ArenaMovePattern]> = {
   shot: ['spread', 'burst'],
   spread: ['pierce', 'slash'],
@@ -42,60 +95,104 @@ const alternatives: Record<ArenaMovePattern, readonly [ArenaMovePattern, ArenaMo
 }
 
 interface MoveTheme {
-  color: string
-  names: Record<ArenaMovePattern, string>
+  moves: { [Pattern in ArenaMovePattern]: readonly [visual: VisualFor<Pattern>, name: string, tint?: string] }
   signatureByTier: readonly [ArenaMovePattern, ArenaMovePattern, ArenaMovePattern]
 }
 
 const themes: Record<ArenaMoveCategory, MoveTheme> = {
   physical: {
-    color: '#ffdf9d',
-    names: { shot: 'Pulso Digital', spread: 'Rajada Tripla', pierce: 'Impacto Perfurante', burst: 'Onda de Impacto', slash: 'Golpe Relâmpago' },
+    moves: {
+      shot: ['bubble', 'Pulso Digital', '#ffdf9d'],
+      spread: ['shard-volley', 'Rajada Tripla', '#ffd6a4'],
+      pierce: ['rail-shot', 'Impacto Perfurante', '#ffcc86'],
+      burst: ['shockwave', 'Onda de Impacto'],
+      slash: ['claw', 'Golpe Relâmpago'],
+    },
     signatureByTier: ['shot', 'slash', 'burst'],
   },
   fire: {
-    color: '#ff914c',
-    names: { shot: 'Brasa Veloz', spread: 'Rajada de Brasas', pierce: 'Lança de Fogo', burst: 'Círculo de Chamas', slash: 'Garra Ígnea' },
+    moves: {
+      shot: ['fireball', 'Brasa Veloz'],
+      spread: ['ember-fan', 'Rajada de Brasas'],
+      pierce: ['flame-lance', 'Lança de Fogo'],
+      burst: ['eruption', 'Círculo de Chamas'],
+      slash: ['flame-claw', 'Garra Ígnea'],
+    },
     signatureByTier: ['shot', 'burst', 'pierce'],
   },
   electric: {
-    color: '#ffe365',
-    names: { shot: 'Pulso de Faísca', spread: 'Faíscas Bifurcadas', pierce: 'Raio Contínuo', burst: 'Campo de Descarga', slash: 'Corte Estático' },
+    moves: {
+      shot: ['spark', 'Pulso de Faísca'],
+      spread: ['chain-sparks', 'Faíscas Bifurcadas'],
+      pierce: ['plasma-beam', 'Raio Contínuo'],
+      burst: ['thunder-field', 'Campo de Descarga'],
+      slash: ['thunder-fist', 'Punho Estático'],
+    },
     signatureByTier: ['spread', 'burst', 'pierce'],
   },
   water: {
-    color: '#75dfff',
-    names: { shot: 'Jato d’Água', spread: 'Leque de Maré', pierce: 'Coluna d’Água', burst: 'Redemoinho', slash: 'Lâmina de Espuma' },
+    moves: {
+      shot: ['bubble', 'Esfera d’Água'],
+      spread: ['tidal-fan', 'Leque de Maré'],
+      pierce: ['ice-spear', 'Coluna de Gelo'],
+      burst: ['whirlpool', 'Redemoinho'],
+      slash: ['crescent', 'Lâmina de Espuma'],
+    },
     signatureByTier: ['shot', 'spread', 'burst'],
   },
   wind: {
-    color: '#8ef5cd',
-    names: { shot: 'Pulso de Vento', spread: 'Rajada Cruzada', pierce: 'Lança dos Ventos', burst: 'Vendaval', slash: 'Corte de Ar' },
+    moves: {
+      shot: ['air-orb', 'Pulso de Vento'],
+      spread: ['feather-volley', 'Rajada Cruzada'],
+      pierce: ['ice-spear', 'Lança dos Ventos', '#8ef5cd'],
+      burst: ['shockwave', 'Vendaval', '#a4f3d8'],
+      slash: ['crescent', 'Corte de Ar', '#a3f7c1'],
+    },
     signatureByTier: ['shot', 'slash', 'spread'],
   },
   light: {
-    color: '#fff1bb',
-    names: { shot: 'Estilhaço de Luz', spread: 'Feixe Prismático', pierce: 'Raio Solar', burst: 'Aurora Radiante', slash: 'Lâmina Solar' },
+    moves: {
+      shot: ['spark', 'Estilhaço de Luz', '#fff5cb'],
+      spread: ['prism-fan', 'Rajada Prismática'],
+      pierce: ['sunbeam', 'Raio Solar'],
+      burst: ['solar-halo', 'Aurora Radiante'],
+      slash: ['twin-blade', 'Lâminas Solares', '#fff0af'],
+    },
     signatureByTier: ['shot', 'spread', 'pierce'],
   },
   dark: {
-    color: '#c695ff',
-    names: { shot: 'Orbe Sombrio', spread: 'Estilhaços Sombrios', pierce: 'Fenda Sombria', burst: 'Eclipse Local', slash: 'Garra Noturna' },
+    moves: {
+      shot: ['fireball', 'Orbe Sombrio', '#cc99ff'],
+      spread: ['shard-volley', 'Estilhaços Sombrios', '#bf9aff'],
+      pierce: ['void-rift', 'Fenda Sombria'],
+      burst: ['eclipse', 'Eclipse Local'],
+      slash: ['claw', 'Garra Noturna', '#cb90ff'],
+    },
     signatureByTier: ['shot', 'slash', 'pierce'],
   },
   nature: {
-    color: '#b0ed75',
-    names: { shot: 'Semente Veloz', spread: 'Chuva de Esporos', pierce: 'Espinho Perfurante', burst: 'Onda de Pólen', slash: 'Corte de Folha' },
+    moves: {
+      shot: ['seed', 'Semente Veloz'],
+      spread: ['feather-volley', 'Chuva de Pétalas', '#d1f08b'],
+      pierce: ['ice-spear', 'Espinho Perfurante', '#acf086'],
+      burst: ['solar-halo', 'Onda de Pólen', '#d9f48a'],
+      slash: ['thorn-whip', 'Chicote de Folhas'],
+    },
     signatureByTier: ['shot', 'spread', 'burst'],
   },
   metal: {
-    color: '#b9d8ff',
-    names: { shot: 'Projétil de Aço', spread: 'Rajada de Limalha', pierce: 'Canhão de Liga', burst: 'Onda de Estilhaços', slash: 'Lâmina de Liga' },
+    moves: {
+      shot: ['steel-orb', 'Projétil de Aço'],
+      spread: ['shard-volley', 'Rajada de Limalha'],
+      pierce: ['rail-shot', 'Canhão de Liga'],
+      burst: ['shockwave', 'Onda de Estilhaços', '#b8d9ff'],
+      slash: ['twin-blade', 'Lâminas de Liga'],
+    },
     signatureByTier: ['shot', 'pierce', 'burst'],
   },
 }
 
-type Signature = readonly [category: ArenaMoveCategory, pattern: ArenaMovePattern, name: string]
+type Signature = readonly [category: ArenaMoveCategory, pattern: ArenaMovePattern, name: string, tint?: string]
 
 // Os nomes e padrões abaixo são adaptações criadas para a arena.
 const signatures = new Map<string, Signature>([
@@ -168,11 +265,11 @@ const signatures = new Map<string, Signature>([
   ['crescemon', ['water', 'slash', 'Lâmina Crescente']],
   ['dianamon', ['light', 'pierce', 'Feixe da Lua Cheia']],
   ['grace novamon', ['light', 'burst', 'Conjunção Celeste']],
-  ['loogamon', ['fire', 'shot', 'Brasa Azul']],
-  ['loogarmon', ['fire', 'slash', 'Presa Azul']],
-  ['soloogarmon', ['fire', 'burst', 'Círculo Azul']],
+  ['loogamon', ['fire', 'shot', 'Brasa Azul', '#6ab8ff']],
+  ['loogarmon', ['fire', 'slash', 'Presa Azul', '#72c6ff']],
+  ['soloogarmon', ['fire', 'burst', 'Círculo Azul', '#65acff']],
   ['helloogarmon', ['dark', 'burst', 'Pira Sombria']],
-  ['fenriloogamon', ['fire', 'pierce', 'Lança de Fogo Azul']],
+  ['fenriloogamon', ['fire', 'pierce', 'Lança de Fogo Azul', '#90b9ff']],
   ['herissmon', ['electric', 'spread', 'Salva de Espinhos']],
   ['filmon', ['electric', 'slash', 'Garra de Faísca']],
   ['stiffilmon', ['electric', 'pierce', 'Espinho Condutor']],
@@ -234,6 +331,41 @@ const lineThemes = new Map<string, ArenaMoveCategory>([
   ['79d86bd96bad49ee', 'metal'], // Ryudamon
   ['c56cb48ecc106463', 'metal'], // DORUmon
   ['25bf1590b59892d9', 'electric'], // Pulsemon
+  ['d70ac942423445cb', 'electric'], // Impulse City
+  ['1e4a8117e0716bb8', 'physical'], // Titan of Dust
+  ['257a3667ab644edc', 'water'], // Infinite Tide
+  ['9f05503d4519d2bf', 'nature'], // Hermit in the Jungle
+  ['219bfa41a92f1b68', 'physical'], // Primeval Warriors
+  ['c5ac9f9f73c10cc8', 'metal'], // Nu Metal Empire
+  ['ffffde3475e68d8e', 'fire'], // Agnimon
+  ['7719cb9f0472f46e', 'light'], // Ancient Warriors
+  ['cf31dbd5ba2e2fab', 'fire'], // Volcanic Beat
+  ['4cbdb04fbdabc012', 'water'], // Blizzard Fang
+  ['ad95fda80f528ee8', 'wind'], // Fairimon
+  ['f7145462dc99873a', 'dark'], // Dynasty of the Evil
+  ['04c5dc576a34887b', 'fire'], // Agumon
+  ['5e133fc75fc90377', 'water'], // Gabumon
+  ['c2deb1a0cab9a317', 'dark'], // Black Roar
+  ['452429f92f4340dd', 'dark'], // Shadow Howl
+  ['8160a04f17b7e759', 'water'], // Chackmon
+  ['23d5bc7093090fc5', 'fire'], // Guilmon
+  ['b8a262b73a584fa2', 'wind'], // Terriermon
+  ['3b1fa4b95b44522a', 'fire'], // Guilmon GP
+  ['7308c7c53e319e16', 'dark'], // Impmon GP
+  ['76654e31ca42bf29', 'light'], // Renamon GP
+  ['61dc98223a239774', 'physical'], // Monodramon GP
+  ['71d934894bc14275', 'physical'], // Gammamon
+  ['90a7d336bf372d07', 'wind'], // Angoramon
+  ['b82d9b0714176b6d', 'electric'], // Jellymon
+  ['a0a7b19bf3b1942f', 'dark'], // Mad Black Roar
+  ['105d38e36850bc50', 'dark'], // True Shadow Howl
+  ['1e3d351741498806', 'wind'], // Wolf Howl
+  ['ebec1fb5584f9ccc', 'light'], // Renamon
+  ['10ab04bac23563d0', 'dark'], // Louwemon
+  ['31001a50869242bd', 'metal'], // Ryudamon
+  ['1ca8de5d673eacf6', 'metal'], // Espimon
+  ['2661974b34f571f5', 'light'], // Wolfmon
+  ['a5735c0f13f86ae3', 'electric'], // Blitzmon
 ])
 
 function normalizeName(name: string) {
@@ -250,7 +382,11 @@ for (const template of templates) {
   }
 }
 
-const babyNames = ['Bolha Digital', 'Trio de Bolhas', 'Salto de Espuma'] as const
+const babyMoves = {
+  shot: ['bubble', 'Bolha Digital'],
+  spread: ['tidal-fan', 'Trio de Bolhas'],
+  burst: ['whirlpool', 'Salto de Espuma'],
+} as const satisfies Pick<MoveTheme['moves'], 'shot' | 'spread' | 'burst'>
 
 export function arenaMoves(partner: string, stage?: number, templateId?: string): readonly [ArenaMove, ArenaMove, ArenaMove] {
   const name = normalizeName(partner)
@@ -267,19 +403,24 @@ export function arenaMoves(partner: string, stage?: number, templateId?: string)
   const [second, third] = alternatives[primary]
   const growth = rank - 2
 
-  function move(pattern: ArenaMovePattern, moveName: string): ArenaMove {
+  function move(definition: MoveTheme['moves'][ArenaMovePattern], moveName?: string, colorOverride?: string): ArenaMove {
+    const [visual, defaultName, tint] = definition
+    const style = arenaMoveStyles[visual]
+    const { pattern } = style
     const stats = patternStats[pattern]
     return {
-      name: moveName,
+      name: moveName ?? defaultName,
       category,
       pattern,
-      power: Math.round(stats.power * (1 + growth * 0.105) * 100) / 100,
-      range: Math.round(stats.range + growth * stats.rangeGrowth),
-      cooldownMs: Math.round(stats.cooldownMs * (1 - growth * 0.025)),
-      color: theme.color,
+      visual,
+      visualLabel: style.label,
+      power: Math.round(stats.power * style.powerScale * (1 + growth * 0.105) * 100) / 100,
+      range: Math.round(stats.range + style.rangeBonus + growth * stats.rangeGrowth),
+      cooldownMs: Math.round(stats.cooldownMs * style.cooldownScale * (1 - growth * 0.025)),
+      color: colorOverride ?? tint ?? style.color,
     }
   }
 
-  if (rank < 2) return [move(primary, babyNames[0]), move(second, babyNames[1]), move(third, babyNames[2])]
-  return [move(primary, signature?.[2] ?? theme.names[primary]), move(second, theme.names[second]), move(third, theme.names[third])]
+  if (rank < 2) return [move(babyMoves.shot), move(babyMoves.spread), move(babyMoves.burst)]
+  return [move(theme.moves[primary], signature?.[2], signature?.[3]), move(theme.moves[second]), move(theme.moves[third])]
 }

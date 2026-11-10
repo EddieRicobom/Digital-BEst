@@ -112,7 +112,7 @@ describe('parceiros e aventura na interface', () => {
     click('EVOLUÇÃO'); await nextTick()
     expect(host.textContent).toContain('Formas alcançadas')
     const edge = [...host.querySelectorAll('.evolutions article')].find(item => item.textContent?.includes('D-3 White and Yellow'))
-    expect(edge?.textContent).toContain('TROCA DE BEM')
+    expect(edge?.textContent).toContain('TROCA DE LINHA')
     const evolve = edge?.querySelector<HTMLButtonElement>('button')
     expect(evolve?.disabled).toBe(false)
     evolve!.click(); await nextTick()

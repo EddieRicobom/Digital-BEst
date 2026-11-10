@@ -19,6 +19,16 @@ describe('linhas de evolução interligadas', () => {
     expect(mixedEvolutions('Pulsemon', 0, pulse.id)).toEqual([])
     expect(mixedEvolutions('Pulsemon', 2, pulse.id).every(e => e.sourceName !== '25th Anniversary')).toBe(true)
   })
+  it('conecta versões BEM e DIM da mesma forma sem perder os requisitos', () => {
+    const bem = templates.find(t => t.name === 'Gammamon' && t.type === 'BEM')!
+    const dim = templates.find(t => t.name === 'Gammamon' && t.type === 'DIM')!
+    const paths = mixedEvolutions('Gammamon', 2, bem.id)
+    expect(paths.some(e => e.sourceId === dim.id && e.sourceType === 'DIM' && e.crossed)).toBe(true)
+    expect(paths.some(e => e.sourceId === bem.id && e.sourceType === 'BEM')).toBe(true)
+    const babyPaths = mixedEvolutions('Gurimon', 1, bem.id).filter(e => e.target.name === 'Gammamon')
+    expect(babyPaths.some(e => e.sourceId === bem.id)).toBe(true)
+    expect(babyPaths.some(e => e.sourceId === dim.id)).toBe(true)
+  })
   it('mantém a linha 25th para quem já possui esse template', () => {
     const original = templates.find(t => t.name === '25th Anniversary')!
     expect(mixedEvolutions('Botamon', 0, original.id).some(e => e.sourceId === original.id)).toBe(true)

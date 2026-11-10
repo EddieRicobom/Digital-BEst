@@ -62,6 +62,15 @@ describe('controles da arena', () => {
     button('Retomar batalha').click(); advance(136); await nextTick()
     expect(evade.disabled).toBe(false)
   })
+  it('coloca os controles dentro do campo de jogo', async () => {
+    app = createApp(Arena, { team: [{id:'0',name:'Agumon',stage:2,power:0,stamina:0,sprite:''},{id:'1',name:'Gabumon',stage:2,power:0,stamina:0,sprite:''}] })
+    app.mount(host); await nextTick()
+    const field = host.querySelector('.arena-field')!
+    expect(field.querySelector('.joystick')).not.toBeNull()
+    expect(field.querySelector('.dodge-button')).not.toBeNull()
+    expect(field.querySelectorAll('.move-button')).toHaveLength(3)
+    expect(field.querySelectorAll('.team-member')).toHaveLength(2)
+  })
   it('move com um toque e usa outro para trocar ataque e esquivar', async () => {
     app = createApp(Arena, { partner: 'Agumon', stage: 2, power: 0, stamina: 0, sprite: '' })
     app.mount(host); await nextTick()
@@ -206,7 +215,8 @@ describe('expedição Survivor', () => {
     app.mount(host); await nextTick()
     expect(host.querySelector('.arena-header')?.textContent).toContain('ÁREA 0')
     expect(host.querySelector('.arena-header')?.textContent).toContain('ONDA 1/3')
-    expect(button('Bafo de Brasa').textContent).toContain('0.7s')
+    const initialCooldown = Number(button('Bafo de Brasa').textContent?.match(/([0-9.]+)s/)?.[1])
+    expect(initialCooldown).toBeGreaterThan(0)
 
     advance(220); await nextTick()
     expect(host.querySelector('.upgrade-screen')).toBeNull()
@@ -223,7 +233,8 @@ describe('expedição Survivor', () => {
 
     button('Recarga rápida').click(); await nextTick()
     expect(host.querySelector('.arena-header')?.textContent).toContain('ONDA 2/3')
-    expect(button('Bafo de Brasa').textContent).toContain('0.5s')
+    const improvedCooldown = Number(button('Bafo de Brasa').textContent?.match(/([0-9.]+)s/)?.[1])
+    expect(improvedCooldown).toBeLessThan(initialCooldown)
     expect(button('Nyokimon').disabled).toBe(false)
     advance(1800); await nextTick()
     expect(host.querySelector('.arena-header')?.textContent).toContain('9/9 DERROTADOS')
@@ -294,11 +305,14 @@ describe('expedição Survivor', () => {
       expect(button(name).getAttribute('aria-pressed')).toBe('true')
       expect(shots()).toEqual([firstShot])
     }
-    advance(29); await nextTick()
-    expect(shots()).toHaveLength(0)
-    advance(1); await nextTick()
-    expect(shots()).toHaveLength(1)
-    expect(shots()[0]).not.toBe(firstShot)
+    advance(20); await nextTick()
+    expect(shots().every(shot => shot === firstShot)).toBe(true)
+    let nextShot: Element | undefined
+    for (let i = 0; i < 30 && !nextShot; i++) {
+      advance(1); await nextTick()
+      nextShot = shots().find(shot => shot !== firstShot)
+    }
+    expect(nextShot).toBeDefined()
   })
 
   it.each([

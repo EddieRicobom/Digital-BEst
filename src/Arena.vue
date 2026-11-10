@@ -24,7 +24,7 @@ export interface ArenaBattleResult {
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import AnimatedSprite from './AnimatedSprite.vue'
-import { arenaMoves } from './arenaMoves'
+import { arenaMoves, type ArenaMoveVisual } from './arenaMoves'
 import { useSpriteSheet } from './sprite-effects'
 
 const props = defineProps<{
@@ -47,8 +47,8 @@ type Position = { x: number; y: number }
 type EnemyKind = 'pursuer' | 'shooter' | 'charger' | 'boss'
 type Enemy = Position & { id: number; hp: number; maxHp: number; kind: EnemyKind; cooldown: number; windup: number; radialAttack: boolean; charge: number; vx: number; vy: number }
 type Hit = Position & { expires: number; enemyId: number }
-type Projectile = Position & { id: number; vx: number; vy: number; remaining: number; damage: number; color: string; hostile: boolean; piercing: boolean; hitIds: number[] }
-type Effect = Position & { id: number; expires: number; radius: number; color: string; kind: 'burst' | 'slash'; angle: number }
+type Projectile = Position & { id: number; vx: number; vy: number; remaining: number; damage: number; color: string; hostile: boolean; piercing: boolean; hitIds: number[]; visual?: ArenaMoveVisual }
+type Effect = Position & { id: number; expires: number; radius: number; color: string; kind: 'burst' | 'slash'; angle: number; visual: ArenaMoveVisual }
 type Direction = 'up' | 'left' | 'down' | 'right'
 
 const directions = [
@@ -350,11 +350,11 @@ function harmEnemy(enemy: Enemy, damage: number) {
   enemy.hp -= damage
   hit.value = { x: enemy.x, y: enemy.y, expires: frame + 8, enemyId: enemy.id }
 }
-function shoot(x: number, y: number, dx: number, dy: number, damage: number, range: number, color: string, hostile = false, piercing = false) {
+function shoot(x: number, y: number, dx: number, dy: number, damage: number, range: number, color: string, hostile = false, piercing = false, visual?: ArenaMoveVisual) {
   const length = Math.hypot(dx, dy) || 1
   const speed = hostile ? .32 : .8
   projectiles.value.push({ id: nextId++, x, y, vx: dx / length * speed, vy: dy / length * speed,
-    remaining: range, damage, color, hostile, piercing, hitIds: [] })
+    remaining: range, damage, color, hostile, piercing, hitIds: [], visual })
 }
 
 function bossEnraged(enemy: Enemy) {
@@ -397,7 +397,7 @@ function attack(nearest: Enemy) {
   attacking.value = true
   if (move.pattern === 'burst' || move.pattern === 'slash') {
     const radius = range
-    effects.value.push({ id: nextId++, x: player.value.x, y: player.value.y, expires: frame + 14, radius, color: move.color, kind: move.pattern, angle: Math.atan2(uy, ux) * 180 / Math.PI })
+    effects.value.push({ id: nextId++, x: player.value.x, y: player.value.y, expires: frame + 14, radius, color: move.color, kind: move.pattern, angle: Math.atan2(uy, ux) * 180 / Math.PI, visual: move.visual })
     for (const enemy of enemies.value) {
       const ex = enemy.x - player.value.x, ey = enemy.y - player.value.y
       const d = Math.hypot(ex, ey)
@@ -406,9 +406,9 @@ function attack(nearest: Enemy) {
   } else if (move.pattern === 'spread') {
     for (const angle of [-.24, 0, .24]) {
       const c = Math.cos(angle), sin = Math.sin(angle)
-      shoot(player.value.x, player.value.y, ux * c - uy * sin, ux * sin + uy * c, damage, range, move.color)
+      shoot(player.value.x, player.value.y, ux * c - uy * sin, ux * sin + uy * c, damage, range, move.color, false, false, move.visual)
     }
-  } else shoot(player.value.x, player.value.y, ux, uy, damage, range, move.color, false, move.pattern === 'pierce')
+  } else shoot(player.value.x, player.value.y, ux, uy, damage, range, move.color, false, move.pattern === 'pierce', move.visual)
   if (upgradeRanks.value.cannon > 0)
     shoot(player.value.x, player.value.y, ux, uy, damage * .45 * upgradeRanks.value.cannon, Math.max(range, 38), '#84f7ee', false, true)
 }
@@ -552,8 +552,8 @@ onUnmounted(() => {
         <span class="enemy-sprite" aria-hidden="true" :class="{ 'is-cel-shaded': enemySheets[enemy.kind].celShaded }" :style="{ backgroundImage: enemySheets[enemy.kind].backgroundImage }"></span>
         <div v-if="enemy.kind !== 'boss'" class="enemy-hp"><span :style="{ width: 100 * enemy.hp / enemy.maxHp + '%' }"></span></div>
       </div>
-      <div v-for="shot in projectiles" :key="shot.id" class="projectile" :class="{ hostile: shot.hostile }" :style="{left: shot.x + '%', top: shot.y + '%', background: shot.color}"></div>
-      <div v-for="effect in effects" :key="effect.id" class="attack-effect" :class="effect.kind" :style="{left: effect.x + '%', top: effect.y + '%', width: effect.radius * 2 + '%', height: effect.radius * 2 + '%', borderColor: effect.color, transform: `translate(-50%,-50%) rotate(${effect.angle}deg)`}"></div>
+      <div v-for="shot in projectiles" :key="shot.id" class="projectile" :class="[shot.visual ? `fx-${shot.visual}` : '', { hostile: shot.hostile }]" :style="{left: shot.x + '%', top: shot.y + '%', backgroundColor: shot.color, color: shot.color, transform: shot.visual ? `translate(-50%,-50%) rotate(${Math.atan2(shot.vy, shot.vx * fieldAspect)}rad)` : undefined}"></div>
+      <div v-for="effect in effects" :key="effect.id" class="attack-effect" :class="[effect.kind, `fx-${effect.visual}`]" :style="{left: effect.x + '%', top: effect.y + '%', width: effect.radius * 2 + '%', height: effect.radius * 2 + '%', color: effect.color, borderColor: effect.color, transform: `translate(-50%,-50%) rotate(${effect.angle}deg)`}"></div>
       <div v-if="hit" class="hit" aria-hidden="true" :style="{ left: hit.x + '%', top: hit.y + '%' }"></div>
       <div class="fighter" :class="{ moving: Math.hypot(movement.x, movement.y) > 0, attacking: attacking, dodging: dodgeFrames > 0 }" :style="{ left: player.x + '%', top: player.y + '%' }">
         <AnimatedSprite :key="activeMember?.id" :sheet="activeMember ? activeMember.sheet : sheet" :fallback="activeMember?.sprite ?? sprite" :label="activeMember?.name ?? 'Parceiro'" :frames="fighterFrames" :paused="suspended" :interval="120" />
@@ -563,6 +563,36 @@ onUnmounted(() => {
         <div class="boss-hp" role="progressbar" :aria-label="`Vida de ${guardian.name}`" :aria-valuenow="Math.ceil(boss.hp)" :aria-valuemax="boss.maxHp">
           <span :style="{ width: 100 * boss.hp / boss.maxHp + '%' }"></span>
         </div>
+      </div>
+      <div v-show="!suspended" class="game-overlay">
+    <div v-if="roster.length > 1" class="arena-team" role="group" aria-label="Trocar Digimon ativo">
+      <button v-for="(member, index) in roster" :key="member.id" type="button" class="team-member"
+        :class="{ selected: index === activeIndex }" :aria-pressed="index === activeIndex"
+        :aria-keyshortcuts="teamKeys[index]" :disabled="suspended || member.hp <= 0"
+        @pointerdown.stop.prevent="pointerAction($event, () => switchMember(index))" @click="keyboardAction($event, () => switchMember(index))">
+        <strong>{{ member.name }}</strong><small>{{ member.hp > 0 ? `${member.hp}/${member.maxHp} HP` : 'Fora de combate' }}</small>
+      </button>
+    </div>
+    <div class="move-list" role="group" aria-label="Selecionar ataque automático">
+      <button v-for="(move, index) in moves" :key="index" class="move-button" type="button" :class="{ selected: fighter.selectedMove === index }" :aria-pressed="fighter.selectedMove === index" :disabled="suspended" @pointerdown.stop.prevent="pointerAction($event, () => selectMove(index))" @click="keyboardAction($event, () => selectMove(index))">
+        <strong>{{ move.name }}</strong><small>{{ move.visualLabel }} · {{ (moveCooldown(move.cooldownMs) / 1000).toFixed(1) }}s</small>
+        <small v-if="fighter.selectedMove === index && !targetInRange && !suspended" class="attack-range">{{ distanceToTarget === Infinity ? 'Sem alvo' : 'Fora de alcance' }}</small>
+      </button>
+    </div>
+    <div class="combat-controls">
+    <div class="movement-controls">
+      <div ref="joystickElement" class="joystick" :class="{ disabled: suspended }"
+        aria-hidden="true" @pointerdown.prevent="startJoystick" @pointermove.prevent="moveJoystick"
+        @pointerup="endJoystick" @pointercancel="endJoystick" @lostpointercapture="endJoystick" @contextmenu.prevent>
+        <span class="joystick-knob" :style="{ transform: `translate(calc(-50% + ${joystick.x * 70}%), calc(-50% + ${joystick.y * 70}%))` }"></span>
+      </div>
+      <div class="accessible-directions" role="group" aria-label="Movimento por botões">
+        <button v-for="direction in directions" :key="direction.id" type="button" :aria-label="direction.label"
+          :disabled="suspended" @click="nudge(direction.id, 1.2)">{{ direction.symbol }}</button>
+      </div>
+    </div>
+    <button type="button" class="dodge-button" :disabled="suspended || dodgeCooldown > 0" @pointerdown.stop.prevent="pointerAction($event, dodge)" @click="keyboardAction($event, dodge)">ESQUIVAR <small>{{ dodgeCooldown > 0 ? (dodgeCooldown * stepMs / 1000).toFixed(1) + 's' : 'PRONTO' }}</small></button>
+    </div>
       </div>
       <div v-if="paused" class="pause-screen">
         <strong>Batalha pausada</strong>
@@ -584,37 +614,9 @@ onUnmounted(() => {
       </div>
       <strong>{{ fighter.hp }}/{{ fighter.maxHp }}</strong>
     </div>
-    <div v-if="roster.length > 1" class="arena-team" role="group" aria-label="Trocar Digimon ativo">
-      <button v-for="(member, index) in roster" :key="member.id" type="button" class="team-member"
-        :class="{ selected: index === activeIndex }" :aria-pressed="index === activeIndex"
-        :aria-keyshortcuts="teamKeys[index]" :disabled="suspended || member.hp <= 0"
-        @pointerdown.stop.prevent="pointerAction($event, () => switchMember(index))" @click="keyboardAction($event, () => switchMember(index))">
-        <strong>{{ member.name }}</strong><small>{{ member.hp > 0 ? `${member.hp}/${member.maxHp} HP` : 'Fora de combate' }}</small>
-      </button>
-    </div>
     <p class="arena-credit">Sprites: templates BEM e Greymon por EvilGavin · Digital Link</p>
     <p v-if="adventure">Elimine as três ondas e o chefe para concluir a área. Escolha uma melhoria entre ondas. Os inimigos sinalizam antes de disparar ou avançar.</p>
     <p v-else>Sobreviva por {{ duration }} segundos. O ataque selecionado é automático. Inimigos piscam antes de atirar ou avançar. Os golpes são adaptados para cada parceiro e ficam mais fortes com estágio e treino.</p>
-    <div class="move-list" role="group" aria-label="Selecionar ataque automático">
-      <button v-for="(move, index) in moves" :key="index" class="move-button" type="button" :class="{ selected: fighter.selectedMove === index }" :aria-pressed="fighter.selectedMove === index" :disabled="suspended" @pointerdown.stop.prevent="pointerAction($event, () => selectMove(index))" @click="keyboardAction($event, () => selectMove(index))">
-        <strong>{{ move.name }}</strong><small>{{ move.pattern === 'shot' ? 'Disparo' : move.pattern === 'spread' ? 'Rajada' : move.pattern === 'pierce' ? 'Perfuração' : move.pattern === 'burst' ? 'Área' : 'Golpe próximo' }} · {{ (moveCooldown(move.cooldownMs) / 1000).toFixed(1) }}s</small>
-        <small v-if="fighter.selectedMove === index && !targetInRange && !suspended" class="attack-range">{{ distanceToTarget === Infinity ? 'Sem alvo' : 'Fora de alcance' }}</small>
-      </button>
-    </div>
-    <div class="combat-controls">
-    <div class="movement-controls">
-      <div ref="joystickElement" class="joystick" :class="{ disabled: suspended }"
-        aria-hidden="true" @pointerdown.prevent="startJoystick" @pointermove.prevent="moveJoystick"
-        @pointerup="endJoystick" @pointercancel="endJoystick" @lostpointercapture="endJoystick" @contextmenu.prevent>
-        <span class="joystick-knob" :style="{ transform: `translate(calc(-50% + ${joystick.x * 70}%), calc(-50% + ${joystick.y * 70}%))` }"></span>
-      </div>
-      <div class="accessible-directions" role="group" aria-label="Movimento por botões">
-        <button v-for="direction in directions" :key="direction.id" type="button" :aria-label="direction.label"
-          :disabled="suspended" @click="nudge(direction.id, 1.2)">{{ direction.symbol }}</button>
-      </div>
-    </div>
-    <button type="button" class="dodge-button" :disabled="suspended || dodgeCooldown > 0" @pointerdown.stop.prevent="pointerAction($event, dodge)" @click="keyboardAction($event, dodge)">ESQUIVAR <small>{{ dodgeCooldown > 0 ? (dodgeCooldown * stepMs / 1000).toFixed(1) + 's' : 'PRONTO' }}</small></button>
-    </div>
     <p class="arena-tip">Arraste o controle para mover; quanto mais longe do centro, mais rápido. Teclado: setas ou WASD movem; 1–3 ou Q escolhe ataque; espaço, F ou Shift esquiva.<template v-if="roster.length > 1"> Use {{ teamKeys[0] }}–{{ teamKeys[roster.length - 1] }} para trocar de Digimon.</template></p>
     <div class="arena-actions">
       <button type="button" class="arena-action" :disabled="suspended" @click="pause">Pausar</button>
@@ -694,19 +696,65 @@ onUnmounted(() => {
 @media(prefers-reduced-motion:reduce) { .enemy.warning:before { animation:none; opacity:1; } }
 
 
+/* The field remains usable through the gaps between the touch controls. */
+.arena-field { height:clamp(300px, 55svh, 560px); }
+.game-overlay { position:absolute; inset:0; z-index:3; pointer-events:none; }
+.game-overlay button, .joystick { pointer-events:auto; }
+.arena-team { position:absolute; top:32px; left:6px; right:6px; margin:0; gap:4px; }
+.team-member { min-height:44px; padding:3px; background:#1c2c30e8; }
+.move-list { position:absolute; right:6px; bottom:92px; display:flex; flex-direction:column; width:min(36%, 150px); gap:4px; margin:0; }
+.move-button { min-height:44px; padding:3px 5px; background:#1c2c30e8; touch-action:manipulation; }
+.move-button small, .team-member small { margin-top:1px; }
+.combat-controls { position:absolute; inset:auto 6px 6px; display:flex; align-items:end; justify-content:space-between; pointer-events:none; }
+.joystick { width:clamp(90px, 27vw, 130px); height:clamp(90px, 27vw, 130px); background:radial-gradient(circle, #3c5849d9 0 34%, #213533c9 35% 100%); }
+.dodge-button { min-height:64px; min-width:78px; padding:7px; background:#385340e8; }
+.pause-screen { z-index:10; }
 @media (orientation:landscape) and (max-height:550px) {
-  .arena { display:grid; grid-template-columns:minmax(0,1fr) minmax(225px,.75fr); gap:5px 12px; align-items:start; }
-  .arena-header { grid-column:1; grid-row:1; }
-  .arena-field { grid-column:1; grid-row:2 / span 5; height:calc(100svh - 140px); min-height:150px; }
-  .arena-health { grid-column:1; grid-row:7; margin-top:0; }
-  .arena-team { grid-column:1; grid-row:8; margin:0; }
-  .arena-credit { grid-column:1; grid-row:8; }
-  .arena-team + .arena-credit { grid-row:9; }
+  .arena { padding:8px max(8px, env(safe-area-inset-right)) 8px max(8px, env(safe-area-inset-left)); }
+  .arena-header { padding:2px 0 5px; }
+  .arena-field { height:calc(100svh - 155px); min-height:190px; }
+  .arena-health { margin-top:5px; }
   .arena > p:not(.arena-credit):not(.arena-tip) { display:none; }
-  .move-list { grid-column:2; grid-row:1 / span 2; margin:0; }
-  .combat-controls { grid-column:2; grid-row:3; }
-  .arena-tip { grid-column:2; grid-row:4; }
-  .arena-actions { grid-column:2; grid-row:5; margin-top:0; }
+  .arena-credit, .arena-tip { margin:3px 0; }
+  .arena-actions { margin-top:4px; }
+  .arena-team { top:28px; left:25%; right:25%; }
+  .joystick { width:90px; height:90px; }
+  .move-list { left:100px; right:90px; bottom:6px; width:auto; flex-direction:row; }
+  .move-button { flex:1; min-width:0; }
 }
+
+
+/* Shapes are purely visual; collision and the selected move's damage stay in the combat engine. */
+.projectile:not(.hostile){z-index:1;box-shadow:0 0 8px currentColor}
+.projectile.fx-bubble{width:14px;height:14px;background-color:transparent!important;border:2px solid currentColor;box-shadow:inset 2px 2px 0 #ffffffa8,0 0 6px currentColor}
+.projectile.fx-fireball{width:17px;height:12px;border-radius:75% 25% 55% 40%;background-image:radial-gradient(circle at 70% 45%,#fff8bb 0 14%,transparent 48%)}
+.projectile.fx-spark{width:15px;height:16px;border-radius:0;clip-path:polygon(45% 0,56% 33%,100% 20%,70% 50%,100% 78%,57% 67%,45% 100%,36% 68%,0 79%,28% 50%,0 20%,36% 32%)}
+.projectile.fx-air-orb{width:15px;height:15px;background-color:transparent!important;border:2px dashed currentColor;box-shadow:inset 0 0 4px currentColor}
+.projectile.fx-seed{width:15px;height:9px;border-radius:85% 10% 85% 10%;background-image:linear-gradient(155deg,transparent 40%,#ecffc5 45% 54%,transparent 59%)}
+.projectile.fx-steel-orb{width:13px;height:13px;border-radius:3px;border:2px solid #eaf7ff;background-image:linear-gradient(135deg,#fff8,transparent 50%,#23395588)}
+.projectile.fx-ember-fan{width:13px;height:9px;border-radius:75% 20% 70% 30%;background-image:radial-gradient(circle at 70% 50%,#fff2b8,transparent 60%)}
+.projectile.fx-chain-sparks{width:15px;height:11px;border-radius:0;clip-path:polygon(0 35%,40% 35%,32% 0,100% 58%,61% 58%,68% 100%);box-shadow:none}
+.projectile.fx-tidal-fan{width:14px;height:10px;border-radius:70% 25% 70% 25%;background-image:linear-gradient(145deg,#fff9,transparent 55%)}
+.projectile.fx-feather-volley{width:17px;height:7px;border-radius:80% 10% 80% 10%;background-image:linear-gradient(#ffffffa8,transparent 50%)}
+.projectile.fx-prism-fan{width:14px;height:14px;border-radius:0;clip-path:polygon(100% 50%,20% 0,0 50%,20% 100%);background-image:linear-gradient(120deg,#fff,transparent)}
+.projectile.fx-shard-volley{width:15px;height:12px;border-radius:0;clip-path:polygon(100% 50%,35% 0,0 35%,20% 100%);background-image:linear-gradient(140deg,#ffffffb8,transparent)}
+.projectile.fx-flame-lance{width:25px;height:8px;border-radius:60% 10% 10% 60%;clip-path:polygon(100% 50%,68% 0,0 25%,20% 50%,0 75%,68% 100%);background-image:linear-gradient(0deg,transparent,#fff9,transparent)}
+.projectile.fx-plasma-beam{width:25px;height:7px;border-radius:4px;background-image:linear-gradient(0deg,transparent,#fff,transparent);box-shadow:0 0 12px currentColor}
+.projectile.fx-ice-spear{width:24px;height:9px;border-radius:0;clip-path:polygon(100% 50%,25% 0,0 50%,25% 100%);background-image:linear-gradient(160deg,#fff,transparent 60%)}
+.projectile.fx-sunbeam{width:27px;height:5px;border-radius:5px;background-image:linear-gradient(0deg,#fff9,#fff,#fff9);box-shadow:0 0 14px currentColor,0 0 4px #fff}
+.projectile.fx-void-rift{width:23px;height:11px;border-radius:0;clip-path:polygon(100% 50%,63% 0,35% 35%,0 10%,20% 50%,0 90%,35% 65%,63% 100%);background-image:linear-gradient(90deg,#381660,#fff9)}
+.projectile.fx-rail-shot{width:24px;height:7px;border-radius:1px;border-right:3px solid #fff;background-image:repeating-linear-gradient(90deg,#fff8 0 3px,transparent 3px 7px)}
+.attack-effect.fx-shockwave{border-style:solid;box-shadow:0 0 8px currentColor,inset 0 0 6px currentColor}
+.attack-effect.fx-eruption{border-style:dotted;border-width:6px;background:radial-gradient(circle,transparent 48%,#ffad5438 65%,transparent 72%)}
+.attack-effect.fx-thunder-field{border-style:dashed;border-width:4px;background:repeating-conic-gradient(transparent 0deg 20deg,#fff85b50 22deg 25deg,transparent 27deg 45deg)}
+.attack-effect.fx-whirlpool{border-style:double;border-width:7px;background:radial-gradient(circle,transparent 32%,#7ce4ff3b 34%,transparent 40%,#7ce4ff48 58%,transparent 63%)}
+.attack-effect.fx-solar-halo{border-style:double;border-width:6px;box-shadow:0 0 18px currentColor,inset 0 0 12px currentColor}
+.attack-effect.fx-eclipse{border-width:5px;background:radial-gradient(circle,#24103e99 0 35%,transparent 58%);box-shadow:0 0 12px currentColor}
+.attack-effect.fx-claw{border-style:dashed;border-width:4px}
+.attack-effect.fx-flame-claw{border-width:6px;border-style:dotted;background:radial-gradient(circle,transparent 55%,#ff8b5960 62%,transparent 70%)}
+.attack-effect.fx-thunder-fist{border-width:6px;border-style:dashed;filter:drop-shadow(0 0 5px currentColor)}
+.attack-effect.fx-crescent{border-style:double;border-width:8px}
+.attack-effect.fx-thorn-whip{border-style:dotted;border-width:5px}
+.attack-effect.fx-twin-blade{border-style:double;border-width:10px;box-shadow:inset 0 0 5px #fff}
 
 </style>
