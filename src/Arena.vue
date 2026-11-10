@@ -773,6 +773,11 @@ onUnmounted(() => {
 .boss-hp span { display:block; height:100%; border-radius:9px; background:#ff917d; }
 .boss-hud.enraged .boss-hp span { background:#ff536e; }
 .enemy.struck .enemy-sprite { animation: enemy-hit .16s ease-out; }
+.enemy.chilled { outline:2px solid #80d9ff; border-radius:50%; }
+.enemy.burning { box-shadow:0 0 10px 3px #ff8a48; border-radius:50%; }
+.enemy.poisoned { border:2px solid #9ce879; border-radius:50%; }
+.enemy.exposed { outline:2px dashed #ffe484; outline-offset:3px; border-radius:50%; }
+.enemy.stunned .enemy-sprite { animation-play-state:paused; filter:brightness(1.5); }
 .hit { pointer-events: none; animation: hit-flash .16s ease-out both; }
 .is-paused .fighter .animated-sprite, .is-paused .fighter .animated-fallback, .is-paused .enemy .enemy-sprite, .is-paused .enemy.warning:before, .is-paused .hit { animation-play-state: paused; }
 @keyframes fighter-idle { 50% { transform: translateY(-2px); } }
