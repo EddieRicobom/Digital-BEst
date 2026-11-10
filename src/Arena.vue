@@ -66,7 +66,7 @@ const keyDirections = new Map<string, Direction>([
 const stepMs = 20
 const duration = 45
 const teamKeys = ['4', '5', '6', '7']
-const waves = [
+const baseWaves = [
   { count: 6, interval: 55 },
   { count: 9, interval: 39 },
   { count: 13, interval: 26 },
@@ -110,9 +110,13 @@ const areaNumber = computed(() => {
   return Number.isFinite(level) ? Math.max(0, Math.floor(level)) : 0
 })
 const areaDifficulty = computed(() => Math.min(12, areaNumber.value))
+const waveCount = computed(() => 3 + 2 * areaNumber.value)
 const guardian = computed(() => guardians[areaNumber.value % guardians.length]!)
 const waveIndex = ref(0)
-const wave = computed(() => waves.at(waveIndex.value))
+const wave = computed(() => waveIndex.value < waveCount.value ? baseWaves[waveIndex.value] ?? {
+  count: Math.min(20, 13 + (waveIndex.value - 2) * 3),
+  interval: Math.max(18, 26 - (waveIndex.value - 2) * 3),
+} : undefined)
 const waveDefeated = ref(0)
 let waveSpawned = 0
 let nextSpawnFrame = 5
@@ -297,12 +301,20 @@ function finish(won: boolean) {
   emit('finish', member ? { won, participantIds: [...participantIds], activeMemberId: member.id } : won)
 }
 
+function advanceWave() {
+  waveIndex.value++
+  waveDefeated.value = 0
+  waveSpawned = 0
+  nextSpawnFrame = frame + 45
+}
+
 function offerUpgrade() {
   const options = upgrades.filter(upgrade => upgradeRanks.value[upgrade.id] < upgrade.max)
-  upgradeChoices.value = Array.from({ length: 3 }, () => options.splice(Math.floor(Math.random() * options.length), 1)[0]!)
   projectiles.value = []
   effects.value = []
   hit.value = undefined
+  if (!options.length) { advanceWave(); return }
+  upgradeChoices.value = Array.from({ length: Math.min(3, options.length) }, () => options.splice(Math.floor(Math.random() * options.length), 1)[0]!)
   stopLoop()
 }
 
@@ -310,11 +322,8 @@ function chooseUpgrade(upgrade: Upgrade) {
   if (!playing || document.hidden || !upgradeChoices.value.some(choice => choice.id === upgrade.id)) return
   if (upgradeRanks.value[upgrade.id] >= upgrade.max) return
   upgradeRanks.value[upgrade.id]++
-  waveIndex.value++
-  waveDefeated.value = 0
-  waveSpawned = 0
-  nextSpawnFrame = frame + 45
   upgradeChoices.value = []
+  advanceWave()
   arena.value?.focus({ preventScroll: true })
   startLoop()
 }
@@ -362,9 +371,11 @@ function spawnOpponents() {
   if (frame < nextSpawnFrame) return
   const current = wave.value
   if (current && waveSpawned < current.count) {
-    const kindCount = waveIndex.value + 1
-    const hp = 2.8 + waveIndex.value * 1.1 + areaDifficulty.value * .3
-    spawnEnemy(kinds[waveSpawned++ % kindCount]!, hp)
+    const kindCount = Math.min(kinds.length, waveIndex.value + 1)
+    const kindIndex = (waveSpawned + Math.max(0, waveIndex.value - 2)) % kindCount
+    const hp = 2.8 + Math.min(waveIndex.value, 9) * 1.1 + areaDifficulty.value * .3
+    spawnEnemy(kinds[kindIndex]!, hp)
+    waveSpawned++
     nextSpawnFrame = frame + current.interval
   } else if (!current && waveSpawned === 0) {
     waveSpawned++
@@ -608,7 +619,7 @@ function tick() {
     if (!won) switchMember(reserve)
   }
   if (won) finish(true)
-  else if (props.adventure && wave.value && waveDefeated.value === wave.value.count) offerUpgrade()
+  else if (props.adventure && wave.value && waveDefeated.value >= wave.value.count) offerUpgrade()
 }
 
 function animate(timestamp: number) {
@@ -657,7 +668,7 @@ onUnmounted(() => {
   <section ref="arena" class="arena" tabindex="-1" :aria-label="adventure ? `Expedição, área ${areaNumber}` : 'Arena Survivor'">
     <div class="arena-header">
       <span>{{ adventure ? `ÁREA ${areaNumber}` : 'ARENA SURVIVOR' }}</span>
-      <strong>{{ adventure ? wave ? `ONDA ${waveIndex + 1}/${waves.length}` : 'CHEFE' : `${time}s` }}</strong>
+      <strong>{{ adventure ? wave ? `ONDA ${waveIndex + 1}/${waveCount}` : 'CHEFE' : `${time}s` }}</strong>
       <span>{{ adventure && wave ? `${waveDefeated}/${wave.count}` : defeated }} DERROTADOS</span>
     </div>
     <div ref="field" class="arena-field" :class="{ 'is-paused': suspended }">
@@ -716,7 +727,7 @@ onUnmounted(() => {
         <div><strong>ONDA {{ waveIndex + 1 }} CONCLUÍDA</strong><small>Escolha uma melhoria para esta expedição.</small></div>
         <div class="upgrade-list">
           <button v-for="upgrade in upgradeChoices" :key="upgrade.id" class="arena-action upgrade-button" type="button" @click="chooseUpgrade(upgrade)">
-            <strong>{{ upgrade.name }}</strong><small>{{ upgrade.description }}</small>
+            <strong>{{ upgrade.name }}</strong><small>{{ upgrade.description }} · Nível {{ upgradeRanks[upgrade.id] + 1 }}/{{ upgrade.max }}</small>
           </button>
         </div>
       </div>
@@ -729,7 +740,7 @@ onUnmounted(() => {
       <strong>{{ fighter.hp }}/{{ fighter.maxHp }}</strong>
     </div>
     <p class="arena-credit">Sprites: templates BEM e Greymon por EvilGavin · Digital Link</p>
-    <p v-if="adventure">Elimine as três ondas e o chefe para concluir a área. Escolha uma melhoria entre ondas. Os inimigos sinalizam antes de disparar ou avançar.</p>
+    <p v-if="adventure">Elimine as {{ waveCount }} ondas e o chefe para concluir a área. Escolha uma melhoria ao fim de cada onda. Os inimigos sinalizam antes de disparar ou avançar.</p>
     <p v-else>Sobreviva por {{ duration }} segundos. O ataque selecionado é automático. Inimigos piscam antes de atirar ou avançar. Os golpes são adaptados para cada parceiro e ficam mais fortes com estágio e treino.</p>
     <p class="arena-tip">Arraste o controle para mover; quanto mais longe do centro, mais rápido. Teclado: setas ou WASD movem; 1–3 ou Q escolhe ataque; espaço, F ou Shift esquiva.<template v-if="roster.length > 1"> Use {{ teamKeys[0] }}–{{ teamKeys[roster.length - 1] }} para trocar de Digimon.</template></p>
     <div class="arena-actions">

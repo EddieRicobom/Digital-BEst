@@ -363,15 +363,42 @@ describe('expedição Survivor', () => {
     const team = [member('0', 'Agumon', { power: 100, stamina: 200 })]
     app = createApp(Arena, { adventure: true, areaLevel, team })
     app.mount(host); await nextTick()
-    for (let wave = 0; wave < 3; wave++) {
+    const waveCount = 3 + 2 * areaLevel
+    for (let wave = 0; wave < waveCount; wave++) {
+      expect(host.querySelector('.arena-header')?.textContent).toContain(`ONDA ${wave + 1}/${waveCount}`)
       advance(2000); await nextTick()
+      expect(host.querySelector('.upgrade-screen')?.textContent).toContain(`ONDA ${wave + 1} CONCLUÍDA`)
+      expect(host.querySelectorAll('.upgrade-button')).toHaveLength(3)
       host.querySelector<HTMLButtonElement>('.upgrade-button')!.click()
+      await nextTick()
     }
     advance(45); await nextTick()
     const boss = host.querySelector('.boss-hp')
     expect(boss?.getAttribute('aria-label')).toBe(`Vida de ${guardian}`)
     expect(boss?.getAttribute('aria-valuemax')).toBe(bossHp)
   })
+
+  it('continua até o chefe quando esgota as melhorias em uma área longa', async () => {
+    const areaLevel = 40
+    const waveCount = 3 + 2 * areaLevel
+    app = createApp(Arena, { adventure: true, areaLevel, team: [member('0', 'Agumon', { power: 100, stamina: 10000 })] })
+    app.mount(host); await nextTick()
+    let wavesWithoutUpgrade = false
+    for (let index = 0; index < waveCount; index++) {
+      expect(host.querySelector('.arena-header')?.textContent).toContain(`ONDA ${index + 1}/${waveCount}`)
+      advance(2000); await nextTick()
+      const choices = [...host.querySelectorAll<HTMLButtonElement>('.upgrade-button')]
+      expect(choices.length).toBeLessThanOrEqual(3)
+      if (choices.length) { choices[0]!.click(); await nextTick() }
+      else { wavesWithoutUpgrade = true; break }
+    }
+    expect(wavesWithoutUpgrade).toBe(true)
+    for (let ticks = 0; !host.querySelector('.boss-hp') && ticks < 3000; ticks++) {
+      advance(20); await nextTick()
+    }
+    expect(host.querySelector('.arena-header')?.textContent).toContain('CHEFE')
+    expect(host.querySelector('.boss-hp')).not.toBeNull()
+  }, 30000)
 
   it('encerra a expedição por derrota quando todos os Digimon caem', async () => {
     const finish = vi.fn()
