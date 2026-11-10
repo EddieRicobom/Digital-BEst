@@ -5,11 +5,12 @@ import { readActivitySources, syncHealth } from './health'
 
 vi.mock('@capacitor/core', () => ({ Capacitor: { getPlatform: vi.fn() } }))
 vi.mock('@capgo/capacitor-health', () => ({
-  Health: { isAvailable: vi.fn(), requestAuthorization: vi.fn(), checkAuthorization: vi.fn(), queryAggregated: vi.fn(), readSamples: vi.fn() },
+  Health: { isAvailable: vi.fn(), requestAuthorization: vi.fn(), checkAuthorization: vi.fn(), queryAggregated: vi.fn(), queryWorkouts: vi.fn(), readSamples: vi.fn() },
 }))
 
 const authorize = vi.mocked(Health.requestAuthorization)
 const query = vi.mocked(Health.queryAggregated)
+const queryWorkouts = vi.mocked(Health.queryWorkouts)
 const checkAuthorization = vi.mocked(Health.checkAuthorization)
 const readSamples = vi.mocked(Health.readSamples)
 const localNoon = new Date(2026, 0, 2, 12)
@@ -41,7 +42,7 @@ describe('leitura do Health Connect', () => {
   it('consulta somente os tipos autorizados desde a meia-noite local', async () => {
     authorize.mockResolvedValue({ readAuthorized: ['steps'], readDenied: ['calories'], writeAuthorized: [], writeDenied: [] })
     query.mockResolvedValue(stepResult(0))
-    await expect(syncHealth()).resolves.toEqual({ steps: 0, calories: null, day: '2026-01-02', denied: ['calories'], failed: [], sources: { steps: 'combined', calories: null } })
+    await expect(syncHealth()).resolves.toEqual({ steps: 0, calories: null, distanceMeters: null, exerciseMinutes: null, exerciseTypes: [], day: '2026-01-02', denied: ['calories', 'distance', 'workouts'], failed: [], sources: { steps: 'combined', calories: null, distance: null } })
     expect(query).toHaveBeenCalledExactlyOnceWith({
       dataType: 'steps',
       startDate: new Date(2026, 0, 2).toISOString(),
@@ -56,7 +57,7 @@ describe('leitura do Health Connect', () => {
       if (dataType === 'steps') return stepResult(123)
       throw new Error('Consulta rejeitada')
     })
-    await expect(syncHealth()).resolves.toMatchObject({ steps: 123, calories: null, denied: [], failed: ['calories'] })
+    await expect(syncHealth()).resolves.toMatchObject({ steps: 123, calories: null, denied: ['distance', 'workouts'], failed: ['calories'] })
   })
 
   it('prioriza os agregados da fonte selecionada e recorre ao agregado geral por métrica ausente', async () => {
@@ -93,13 +94,38 @@ describe('leitura do Health Connect', () => {
 
   it('distingue dados ausentes de valores inválidos', async () => {
     query.mockResolvedValueOnce(stepResult(Number.NaN)).mockResolvedValueOnce({ samples: [] })
-    await expect(syncHealth()).resolves.toMatchObject({ steps: null, calories: null, denied: [], failed: ['steps'] })
+    await expect(syncHealth()).resolves.toMatchObject({ steps: null, calories: null, denied: ['distance', 'workouts'], failed: ['steps'] })
   })
 
   it('evita enviar um intervalo vazio à meia-noite', async () => {
     vi.setSystemTime(new Date(2026, 0, 2))
     await expect(syncHealth()).resolves.toMatchObject({ steps: null, calories: null, day: '2026-01-02', failed: [] })
     expect(query).not.toHaveBeenCalled()
+  })
+
+  it('lê distância em metros e duração de sessões de uma fonte genérica', async () => {
+    authorize.mockResolvedValue({ readAuthorized: ['steps', 'calories', 'distance', 'workouts'], readDenied: [], writeAuthorized: [], writeDenied: [] })
+    query.mockImplementation(async ({ dataType, sourceId }) => sourceId ? { samples: [] } : stepResult(dataType === 'distance' ? 2500 : 100))
+    queryWorkouts.mockResolvedValue({ workouts: [{ workoutType: 'walking', duration: 1800, startDate: new Date(2026, 0, 2, 10).toISOString(), endDate: new Date(2026, 0, 2, 10, 30).toISOString(), sourceId: 'com.other.health' }] })
+    const result = await syncHealth('com.bettermifitness.sync')
+    expect(result).toMatchObject({ distanceMeters: 2500, exerciseMinutes: 30, exerciseTypes: ['Caminhada'], denied: [], failed: [], sources: { distance: 'combined' } })
+    expect(queryWorkouts).toHaveBeenCalledWith({ startDate: new Date(2026, 0, 2).toISOString(), endDate: localNoon.toISOString(), limit: 0, includeAggregates: false })
+  })
+
+  it('isola a falha de distância e a permissão de exercícios dos passos existentes', async () => {
+    authorize.mockResolvedValue({ readAuthorized: ['steps', 'calories', 'distance'], readDenied: ['workouts'], writeAuthorized: [], writeDenied: [] })
+    query.mockImplementation(async ({ dataType }) => dataType === 'distance' ? Promise.reject(new Error('sem distância')) : stepResult(120))
+    const result = await syncHealth()
+    expect(result).toMatchObject({ steps: 120, calories: 120, distanceMeters: null, exerciseMinutes: null, denied: ['workouts'], failed: ['distance'] })
+    expect(queryWorkouts).not.toHaveBeenCalled()
+  })
+
+  it('une sessões duplicadas e limita a duração à meia-noite local', async () => {
+    authorize.mockResolvedValue({ readAuthorized: ['steps', 'calories', 'distance', 'workouts'], readDenied: [], writeAuthorized: [], writeDenied: [] })
+    query.mockResolvedValue({ samples: [] })
+    const session = { workoutType: 'running' as const, duration: 1800, startDate: new Date(2026, 0, 1, 23, 45).toISOString(), endDate: new Date(2026, 0, 2, 0, 15).toISOString() }
+    queryWorkouts.mockResolvedValue({ workouts: [{ ...session, sourceId: 'app.a' }, { ...session, sourceId: 'app.b' }] })
+    await expect(syncHealth()).resolves.toMatchObject({ exerciseMinutes: 15, exerciseTypes: ['Corrida'] })
   })
 
   it('bloqueia o acesso no navegador sem chamar a ponte nativa', async () => {

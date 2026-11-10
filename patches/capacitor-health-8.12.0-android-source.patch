@@ -46,22 +46,58 @@
              )
  
              val groupedResults = client.aggregateGroupByDuration(aggregateRequest)
+@@ -1041,7 +1046,8 @@
+         endTime: Instant,
+         limit: Int,
+         ascending: Boolean,
+-        anchor: String?
++        anchor: String?,
++        includeAggregates: Boolean
+     ): JSObject {
+         val workouts = mutableListOf<Pair<Instant, JSObject>>()
+         
+@@ -1069,7 +1075,7 @@
+                 }
+                 
+                 // Aggregate calories and distance for this workout session
+-                val aggregatedData = aggregateWorkoutData(client, session)
++                val aggregatedData = if (includeAggregates) aggregateWorkoutData(client, session) else WorkoutAggregatedData(null, null)
+                 val payload = createWorkoutPayload(session, aggregatedData)
+                 workouts.add(session.startTime to payload)
+             }
 --- a/node_modules/@capgo/capacitor-health/android/src/main/java/app/capgo/plugin/health/HealthPlugin.kt
 +++ b/node_modules/@capgo/capacitor-health/android/src/main/java/app/capgo/plugin/health/HealthPlugin.kt
-@@ -445,6 +445,12 @@
-             return
-         }
+@@ -400,6 +400,7 @@
+         val limit = (call.getInt("limit") ?: DEFAULT_LIMIT).coerceAtLeast(0)
+         val ascending = call.getBoolean("ascending") ?: false
+         val anchor = call.getString("anchor")
++        val includeAggregates = call.getBoolean("includeAggregates") ?: true
  
-+        val sourceId = call.getString("sourceId")?.trim()
-+        if (call.data.has("sourceId") && sourceId.isNullOrEmpty()) {
-+            call.reject("sourceId must be a non-empty Android package name")
+         val startInstant = try {
+             manager.parseInstant(call.getString("startDate"), Instant.now().minus(DEFAULT_PAST_DURATION))
+@@ -423,7 +424,7 @@
+         call.launchSafely {
+             val client = getClientOrReject(this) ?: return@launchSafely
+             try {
+-                val result = manager.queryWorkouts(client, workoutType, startInstant, endInstant, limit, ascending, anchor)
++                val result = manager.queryWorkouts(client, workoutType, startInstant, endInstant, limit, ascending, anchor, includeAggregates)
+                 resolve(result)
+             } catch (e: Exception) {
+                 reject(e.message ?: "Failed to query workouts.", null, e)
+@@ -442,6 +443,12 @@
+         val dataType = HealthDataType.from(identifier)
+         if (dataType == null) {
+             call.reject("Unsupported data type: $identifier")
 +            return
 +        }
 +
-         val bucket = call.getString("bucket") ?: "day"
-         // `aggregation` may be a single string or an array of strings. Fall back to a
-         // sensible per-data-type default when omitted.
-@@ -494,7 +500,7 @@
++        val sourceId = call.getString("sourceId")?.trim()
++        if (call.data.has("sourceId") && sourceId.isNullOrEmpty()) {
++            call.reject("sourceId must be a non-empty Android package name")
+             return
+         }
+ 
+@@ -494,7 +501,7 @@
          call.launchSafely {
              val client = getClientOrReject(this) ?: return@launchSafely
              try {
@@ -72,7 +108,16 @@
                  throw e
 --- a/node_modules/@capgo/capacitor-health/dist/esm/definitions.d.ts
 +++ b/node_modules/@capgo/capacitor-health/dist/esm/definitions.d.ts
-@@ -224,6 +224,8 @@
+@@ -127,6 +127,8 @@
+ export interface QueryWorkoutsOptions {
+     /** Optional workout type filter. If omitted, all workout types are returned. */
+     workoutType?: WorkoutType;
++    /** Android only: omit optional distance and calorie reads for each session. */
++    includeAggregates?: boolean;
+     /** Inclusive ISO 8601 start date (defaults to now - 1 day). */
+     startDate?: string;
+     /** Exclusive ISO 8601 end date (defaults to now). */
+@@ -224,6 +226,8 @@
  export interface QueryAggregatedOptions {
      /** The type of data to aggregate from the health store. */
      dataType: HealthDataType;

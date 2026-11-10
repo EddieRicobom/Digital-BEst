@@ -32,6 +32,9 @@ export interface Game {
   creditedCalories: number
   steps: number | null
   calories: number | null
+  healthDistanceMeters: number | null
+  exerciseMinutes: number | null
+  exerciseTypes: string[]
   updated: string | null
 }
 
@@ -144,6 +147,9 @@ export function migrateGame(value: unknown): Game {
     creditedCalories: validActivity(saved.creditedCalories) ?? 0,
     steps: validActivity(saved.steps),
     calories: validActivity(saved.calories),
+    healthDistanceMeters: validActivity(saved.healthDistanceMeters),
+    exerciseMinutes: validActivity(saved.exerciseMinutes),
+    exerciseTypes: Array.isArray(saved.exerciseTypes) ? saved.exerciseTypes.filter((value): value is string => typeof value === 'string' && value.length <= 30).slice(0, 20) : [],
     updated: typeof saved.updated === 'string' ? saved.updated : null,
   }
 }
@@ -161,7 +167,7 @@ export function switchPartner(game: Game, index: number): Game {
   return { ...game, activePartnerIndex: index }
 }
 
-export function applyHealth(g: Game, day: string, steps: number | null, calories: number | null): Game {
+export function applyHealth(g: Game, day: string, steps: number | null, calories: number | null, distanceMeters: number | null = null, exerciseMinutes: number | null = null, exerciseTypes: string[] = []): Game {
   // A late response for an older local day must not reset the current day's credits.
   if (day < g.lastDay) return g
 
@@ -173,7 +179,7 @@ export function applyHealth(g: Game, day: string, steps: number | null, calories
   const nextSteps = Math.max(oldSteps, steps ?? 0)
   const nextCalories = Math.max(oldCalories, calories ?? 0)
   const gained = Math.floor(nextSteps / 10) - Math.floor(oldSteps / 10) + Math.floor(nextCalories) - Math.floor(oldCalories)
-  return { ...g, lastDay: day, steps, calories, creditedSteps: nextSteps, creditedCalories: nextCalories, distance: g.distance + (nextSteps - oldSteps), vital: Math.min(9999, g.vital + gained), updated: new Date().toISOString() }
+  return { ...g, lastDay: day, steps, calories, healthDistanceMeters: validActivity(distanceMeters), exerciseMinutes: validActivity(exerciseMinutes), exerciseTypes, creditedSteps: nextSteps, creditedCalories: nextCalories, distance: g.distance + (nextSteps - oldSteps), vital: Math.min(9999, g.vital + gained), updated: new Date().toISOString() }
 }
 
 export interface EvolutionRequirements { minutes: number; vital: number; trophies: number; battles: number; winRatio: number; adventureLevel: number }

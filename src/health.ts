@@ -3,6 +3,7 @@ import { Health, type HealthDataType, type QueryAggregatedOptions } from '@capgo
 
 const metrics = ['steps', 'calories'] as const
 type ActivityMetric = typeof metrics[number]
+const readPermissions = [...metrics, 'distance', 'workouts'] as const
 export type HealthTotalSource = 'selected' | 'combined' | null
 
 interface ActivityTotal {
@@ -13,10 +14,13 @@ interface ActivityTotal {
 export interface HealthResult {
   steps: number | null
   calories: number | null
+  distanceMeters: number | null
+  exerciseMinutes: number | null
+  exerciseTypes: string[]
   day: string
   denied: HealthDataType[]
   failed: HealthDataType[]
-  sources: Record<ActivityMetric, HealthTotalSource>
+  sources: Record<ActivityMetric | 'distance', HealthTotalSource>
 }
 
 const unavailable: ActivityTotal = { value: null, source: null }
@@ -48,10 +52,10 @@ function todayRange() {
 
 export async function syncHealth(sourceId?: string): Promise<HealthResult> {
   await ensureHealthAvailable()
-  const auth = await Health.requestAuthorization({ read: [...metrics] })
+  const auth = await Health.requestAuthorization({ read: [...readPermissions] })
   const { day, startDate, endDate } = todayRange()
-  const denied = metrics.filter(metric => !auth.readAuthorized.includes(metric))
-  const read = async (dataType: ActivityMetric): Promise<ActivityTotal> => {
+  const denied = readPermissions.filter(metric => !auth.readAuthorized.includes(metric))
+  const read = async (dataType: ActivityMetric | 'distance'): Promise<ActivityTotal> => {
     if (!auth.readAuthorized.includes(dataType) || startDate === endDate) return unavailable
     const options: QueryAggregatedOptions = {
       dataType,
@@ -69,21 +73,61 @@ export async function syncHealth(sourceId?: string): Promise<HealthResult> {
     if (!Number.isFinite(total)) throw new Error('Total de atividade inválido.')
     return { value: total, source }
   }
-  const results = await Promise.allSettled([read('steps'), read('calories')])
-  const failed = metrics.filter((_, index) => results[index]?.status === 'rejected')
-  if (failed.length > 0 && failed.length + denied.length === metrics.length) {
+  const readExercise = async (): Promise<{ minutes: number | null; types: string[] }> => {
+    if (!auth.readAuthorized.includes('workouts') || startDate === endDate) return { minutes: null, types: [] }
+    const { workouts } = await Health.queryWorkouts({ startDate, endDate, limit: 0, includeAggregates: false })
+    if (!workouts.length) return { minutes: null, types: [] }
+    const selected = sourceId ? workouts.filter(workout => workout.sourceId === sourceId) : []
+    const sessions = selected.length ? selected : workouts
+    const start = Date.parse(startDate)
+    const end = Date.parse(endDate)
+    const intervals: Array<[number, number]> = []
+    const labels: Record<string, string> = { walking: 'Caminhada', running: 'Corrida', cycling: 'Ciclismo', swimming: 'Natação', swimmingPool: 'Natação', swimmingOpenWater: 'Natação', hiking: 'Trilha', strengthTraining: 'Treino de força', yoga: 'Yoga', dance: 'Dança', elliptical: 'Elíptico', rowing: 'Remo', soccer: 'Futebol', other: 'Outro exercício' }
+    const types = new Set<string>()
+    for (const workout of sessions) {
+      const from = Date.parse(workout.startDate)
+      const to = Date.parse(workout.endDate)
+      if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) throw new Error('Duração de exercício inválida.')
+      const clippedStart = Math.max(from, start)
+      const clippedEnd = Math.min(to, end)
+      if (clippedEnd > clippedStart) {
+        intervals.push([clippedStart, clippedEnd])
+        types.add(labels[workout.workoutType] ?? 'Outro exercício')
+      }
+    }
+    if (!intervals.length) return { minutes: null, types: [] }
+    intervals.sort((a, b) => a[0] - b[0])
+    let totalMilliseconds = 0
+    let currentStart = 0
+    let currentEnd = 0
+    for (const [from, to] of intervals) {
+      if (from > currentEnd) { totalMilliseconds += currentEnd - currentStart; currentStart = from; currentEnd = to }
+      else currentEnd = Math.max(currentEnd, to)
+    }
+    totalMilliseconds += currentEnd - currentStart
+    if (!Number.isFinite(totalMilliseconds)) throw new Error('Total de exercício inválido.')
+    return { minutes: totalMilliseconds / 60000, types: [...types] }
+  }
+  const results = await Promise.allSettled([read('steps'), read('calories'), read('distance'), readExercise()])
+  const failed = readPermissions.filter((_, index) => results[index]?.status === 'rejected')
+  if (failed.length > 0 && failed.length + denied.length === readPermissions.length) {
     throw new Error('Não foi possível ler os dados do Health Connect. Verifique as permissões e tente novamente.')
   }
-  const [stepsResult, caloriesResult] = results
+  const [stepsResult, caloriesResult, distanceResult, exerciseResult] = results
   const steps = stepsResult.status === 'fulfilled' ? stepsResult.value : unavailable
   const calories = caloriesResult.status === 'fulfilled' ? caloriesResult.value : unavailable
+  const distance = distanceResult.status === 'fulfilled' ? distanceResult.value : unavailable
+  const exercise = exerciseResult.status === 'fulfilled' ? exerciseResult.value : { minutes: null, types: [] }
   return {
     steps: steps.value,
     calories: calories.value,
+    distanceMeters: distance.value,
+    exerciseMinutes: exercise.minutes,
+    exerciseTypes: exercise.types,
     day,
     denied,
     failed,
-    sources: { steps: steps.source, calories: calories.source },
+    sources: { steps: steps.source, calories: calories.source, distance: distance.source },
   }
 }
 

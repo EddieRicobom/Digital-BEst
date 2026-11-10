@@ -110,6 +110,14 @@ describe('histórico de formas', () => {
 })
 
 describe('sincronização de atividade', () => {
+  it('guarda distância física e exercícios sem alterar os passos de aventura', () => {
+    const first = applyHealth(newGame(), '2026-01-01', 100, 5, 750, 20)
+    expect(first).toMatchObject({ distance: 100, healthDistanceMeters: 750, exerciseMinutes: 20, vital: 15 })
+    const restored = migrateGame(first)
+    expect(restored).toMatchObject({ distance: 100, healthDistanceMeters: 750, exerciseMinutes: 20 })
+    const next = applyHealth(restored, '2026-01-02', 200, 0, null, null)
+    expect(next).toMatchObject({ distance: 300, healthDistanceMeters: null, exerciseMinutes: null })
+  })
   it('não credita novamente a mesma leitura ou uma correção menor', () => {
     const first = applyHealth(newGame(), '2026-01-01', 1000, 50)
     const second = applyHealth(first, '2026-01-01', 1000, 50)

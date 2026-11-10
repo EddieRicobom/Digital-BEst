@@ -32,6 +32,20 @@ afterEach(() => { app?.unmount(); host.remove(); vi.useRealTimers(); vi.unstubAl
 async function mount() { app = createApp(AppView); app.mount(host); await nextTick() }
 
 describe('parceiros e aventura na interface', () => {
+  it('mostra métricas diárias de saúde e oculta leituras de ontem sem apagar progresso', async () => {
+    vi.setSystemTime(new Date(2026, 0, 2, 12))
+    const game = newGame()
+    Object.assign(game, { lastDay: '2026-01-02', steps: 1200, calories: 80, healthDistanceMeters: 2500, exerciseMinutes: 45, exerciseTypes: ['Caminhada'], distance: 1200 })
+    localStorage.setItem(key, JSON.stringify(game)); await mount()
+    click('ATIVIDADE'); await nextTick()
+    expect(host.textContent).toContain('2,5 km')
+    expect(host.textContent).toContain('45 min')
+    expect(host.textContent).toContain('Tipos de exercício: Caminhada')
+    vi.setSystemTime(new Date(2026, 0, 3, 12)); vi.advanceTimersByTime(1000); await nextTick()
+    expect(host.textContent).not.toContain('2,5 km')
+    expect(host.textContent).not.toContain('Tipos de exercício: Caminhada')
+    expect(saved().distance).toBe(1200)
+  })
   it('migra o parceiro antigo e permite chocar outro sem substituí-lo', async () => {
     localStorage.setItem(key, JSON.stringify({ partner:'Agumon', templateId:'', characterIndex:null, egg:false, vital:123, power:3, stamina:1, battles:2, wins:1, born:100, distance:500, history:[] }))
     await mount()
