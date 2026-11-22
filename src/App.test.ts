@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, nextTick, type App } from 'vue'
 import { newGame } from './game'
+import { localDayKey } from './progression'
 import AppView from './App.vue'
 
 vi.mock('./Arena.vue', () => ({
@@ -135,6 +136,48 @@ describe('parceiros e aventura na interface', () => {
     expect(updated.forms).toHaveLength(2)
     expect(updated.forms[0].name).toBe('V-mon')
     expect(updated.forms[1].name).toBe(updated.partner)
+  })
+  it('recompensa a batalha com bits, vínculo, missão e resumo de resultados', async () => {
+    const game = newGame(); game.vital = 200
+    Object.assign(game.partners[0]!, {partner:'Agumon', power:2})
+    localStorage.setItem(key, JSON.stringify(game)); await mount()
+    const beforeBits = saved().bits
+    click('AVENTURA'); await nextTick()
+    click('BATALHA LIVRE'); await nextTick()
+    click('Finalizar teste'); await nextTick()
+    const after = saved()
+    expect(after.bits).toBeGreaterThan(beforeBits)
+    expect(after.vital).toBe(150)
+    expect(after.partners[0].xp).toBeGreaterThan(0)
+    expect(after.records).toMatchObject({ battles: 1, wins: 1 })
+    expect(after.missions.progress.wins).toBe(1)
+    expect(after.lastWinBonusDay).toBeTruthy()
+    expect(host.querySelector('.reward-card')?.textContent).toContain('Vitória!')
+    expect(host.querySelector('.reward-card')?.textContent).toMatch(/BITS\+\d+/i)
+    click('CONTINUAR'); await nextTick()
+    expect(host.querySelector('.reward-card')).toBeNull()
+  })
+  it('não repete a notificação de medalhas de sequência já conquistadas', async () => {
+    const game = newGame(); game.vital = 200; game.streak = 7; game.lastActiveDay = localDayKey()
+    Object.assign(game.partners[0]!, {partner:'Agumon'})
+    game.records.wins = 3
+    localStorage.setItem(key, JSON.stringify(game)); await mount()
+    click('AVENTURA'); await nextTick()
+    click('BATALHA LIVRE'); await nextTick()
+    click('Finalizar teste'); await nextTick()
+    const summary = host.querySelector('.reward-card')?.textContent ?? ''
+    expect(summary).toContain('Vitória!')
+    expect(summary).not.toContain('Ritmo constante')
+    expect(summary).not.toContain('Lenda diária')
+  })
+  it('treino rende vínculo e progresso de missão sem alterar o custo em VP', async () => {
+    const game = newGame(); game.vital = 100
+    Object.assign(game.partners[0]!, {partner:'Agumon', xp:0})
+    localStorage.setItem(key, JSON.stringify(game)); await mount()
+    click('Treino de força'); await nextTick()
+    expect(saved().vital).toBe(75)
+    expect(saved().partners[0]).toMatchObject({power:1, xp:12})
+    expect(saved().missions.progress.training).toBe(1)
   })
   it('vitória de área debita VP uma vez e conta para os participantes', async () => {
     const game = newGame(); game.vital = 200; game.distance = 1000

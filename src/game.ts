@@ -1,3 +1,5 @@
+import { normalizeChips, normalizeMissions, normalizeRecords, type ChipLevels, type MissionState, type Records } from './progression'
+
 export const PARTNER_LIMIT = 4
 
 export interface FormRecord {
@@ -16,6 +18,7 @@ export interface Partner {
   stamina: number
   battles: number
   wins: number
+  xp: number
   adventureLevel: number
   history: string[]
   forms: FormRecord[]
@@ -36,6 +39,17 @@ export interface Game {
   exerciseMinutes: number | null
   exerciseTypes: string[]
   updated: string | null
+  /** Moeda do núcleo, ganha em batalhas, missões e sequência diária. */
+  bits: number
+  /** Dias seguidos de atividade (acesso, sincronização, treino ou batalha). */
+  streak: number
+  lastActiveDay: string
+  lastBonusDay: string
+  /** Dia em que o bônus da primeira vitória foi recebido. */
+  lastWinBonusDay: string
+  missions: MissionState
+  chips: ChipLevels
+  records: Records
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -125,6 +139,7 @@ function restorePartner(value: unknown, legacy: boolean): Partner {
     stamina: validActivity(saved.stamina) ?? 0,
     battles: validActivity(saved.battles) ?? 0,
     wins: validActivity(saved.wins) ?? 0,
+    xp: validActivity(saved.xp) ?? 0,
     adventureLevel: adventureLevel !== null && Number.isInteger(adventureLevel) ? adventureLevel : -1,
     history,
     // The single-partner save format kept the same template through every evolution.
@@ -151,6 +166,14 @@ export function migrateGame(value: unknown): Game {
     exerciseMinutes: validActivity(saved.exerciseMinutes),
     exerciseTypes: Array.isArray(saved.exerciseTypes) ? saved.exerciseTypes.filter((value): value is string => typeof value === 'string' && value.length <= 30).slice(0, 20) : [],
     updated: typeof saved.updated === 'string' ? saved.updated : null,
+    bits: validActivity(saved.bits) ?? 0,
+    streak: validActivity(saved.streak) !== null && Number.isInteger(saved.streak) ? saved.streak as number : 0,
+    lastActiveDay: typeof saved.lastActiveDay === 'string' ? saved.lastActiveDay : '',
+    lastBonusDay: typeof saved.lastBonusDay === 'string' ? saved.lastBonusDay : '',
+    lastWinBonusDay: typeof saved.lastWinBonusDay === 'string' ? saved.lastWinBonusDay : '',
+    missions: normalizeMissions(saved.missions),
+    chips: normalizeChips(saved.chips),
+    records: normalizeRecords(saved.records),
   }
 }
 

@@ -12,12 +12,26 @@ export interface ArenaMember {
   baseAttack?: number
   baseHp?: number
   baseBp?: number
+  /** Bônus permanentes do núcleo (chips + vínculo). */
+  attackBonus?: number
+  hpBonus?: number
+  hasteBonus?: number
 }
 
 export interface ArenaBattleResult {
   won: boolean
   participantIds: string[]
   activeMemberId: string
+}
+
+export interface ArenaBattleStats {
+  kills: number
+  damage: number
+  maxCombo: number
+  hits: number
+  seconds: number
+  hpRatio: number
+  syncs: number
 }
 </script>
 
@@ -26,6 +40,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import AnimatedSprite from './AnimatedSprite.vue'
 import { arenaMoves, type ArenaMoveVisual } from './arenaMoves'
 import { useSpriteSheet } from './sprite-effects'
+import { playSound } from './sfx'
 
 const props = defineProps<{
   team?: readonly ArenaMember[]
@@ -40,8 +55,9 @@ const props = defineProps<{
   templateId?: string
   power?: number
   stamina?: number
+  bonuses?: { attack?: number; hp?: number; haste?: number }
 }>()
-const emit = defineEmits<{ finish: [result: boolean | ArenaBattleResult] }>()
+const emit = defineEmits<{ finish: [result: boolean | ArenaBattleResult]; stats: [stats: ArenaBattleStats] }>()
 
 type Position = { x: number; y: number }
 type EnemyKind = 'pursuer' | 'shooter' | 'charger' | 'boss'
@@ -129,17 +145,19 @@ let previousTargetId = -1
 let comboCount = 0
 const upgradePanel = ref<HTMLElement>()
 
-function fighterState(stamina: number, baseHp?: number) {
+function fighterState(stamina: number, baseHp?: number, hpBonus = 0) {
   const startingHp = baseHp && Number.isFinite(baseHp) && baseHp > 0 ? Math.min(225, Math.max(75, Math.round(baseHp / 30))) : 100
-  const maxHp = startingHp + stamina * 5
+  const maxHp = Math.round((startingHp + stamina * 5) * (1 + Math.max(0, hpBonus)))
   return { hp: maxHp, maxHp, selectedMove: 0, nextAttackFrame: 0 }
 }
-const roster = ref((props.team ?? []).slice(0, teamKeys.length).map(member => ({ ...member, ...fighterState(member.stamina, member.baseHp) })))
+const roster = ref((props.team ?? []).slice(0, teamKeys.length).map(member => ({ ...member, ...fighterState(member.stamina, member.baseHp, member.hpBonus) })))
 const activeIndex = ref(Math.max(0, roster.value.findIndex(member => member.id === props.initialMemberId)))
 const activeMember = computed(() => roster.value.at(activeIndex.value))
 const participantIds = new Set(activeMember.value ? [activeMember.value.id] : [])
-const solo = ref(fighterState(props.stamina ?? 0))
+const solo = ref(fighterState(props.stamina ?? 0, undefined, props.bonuses?.hp))
 const fighter = computed(() => activeMember.value ?? solo.value)
+const attackBonus = computed(() => Math.max(0, activeMember.value?.attackBonus ?? props.bonuses?.attack ?? 0))
+const hasteBonus = computed(() => Math.max(0, Math.min(0.6, activeMember.value?.hasteBonus ?? props.bonuses?.haste ?? 0)))
 const teamAttackReadyFrame = computed(() => roster.value.reduce((readyFrame, member) => Math.max(readyFrame, member.nextAttackFrame), solo.value.nextAttackFrame))
 const difficultyStage = activeMember.value?.stage
 const player = ref({ x: 50, y: 74 })
@@ -162,6 +180,19 @@ const attacking = ref(false)
 const time = ref(duration)
 const defeated = ref(0)
 const paused = ref(false)
+const damageDealt = ref(0)
+const hitCount = ref(0)
+const displayCombo = ref(0)
+const maxCombo = ref(0)
+const damageNumbers = ref<{ id: number; x: number; y: number; amount: number; critical: boolean; expires: number }[]>([])
+const syncCharge = ref(0)
+const syncFrames = ref(0)
+const syncUses = ref(0)
+let lastComboHitFrame = -100
+const syncReady = computed(() => syncCharge.value >= 100)
+const syncActive = computed(() => syncFrames.value > 0)
+const liveScore = computed(() => Math.round(damageDealt.value * 2 + defeated.value * 120 + maxCombo.value * 25 + syncUses.value * 150))
+const lowHp = computed(() => fighter.value.hp > 0 && fighter.value.hp / fighter.value.maxHp <= 0.3)
 const suspended = computed(() => paused.value || upgradeChoices.value.length > 0)
 const boss = computed(() => props.adventure && !wave.value ? enemies.value.find(enemy => enemy.kind === 'boss') : undefined)
 const arena = ref<HTMLElement>()
@@ -207,6 +238,7 @@ function keydown(event: KeyboardEvent) {
     (event.target instanceof HTMLElement && event.target.closest('input, textarea, select, [contenteditable]'))) return
   const key = event.key.toLowerCase()
   if (!event.repeat && (key === ' ' || key === 'shift' || key === 'f') && !(key === ' ' && event.target instanceof HTMLElement && event.target.closest('button'))) { event.preventDefault(); dodge(); return }
+  if (!event.repeat && key === 'r') { event.preventDefault(); activateSync(); return }
   if (!event.repeat && key === 'q') { event.preventDefault(); selectMove((fighter.value.selectedMove + 1) % moves.value.length); return }
   if (!event.repeat && ['1','2','3'].includes(key)) { event.preventDefault(); selectMove(Number(key) - 1); return }
   const teammate = teamKeys.indexOf(key)
@@ -297,6 +329,19 @@ function finish(won: boolean) {
   if (!playing) return
   playing = false
   stopLoop()
+  const members = roster.value.length ? roster.value : [solo.value]
+  const totalHp = members.reduce((sum, member) => sum + Math.max(0, member.hp), 0)
+  const totalMaxHp = members.reduce((sum, member) => sum + Math.max(1, member.maxHp), 0)
+  emit('stats', {
+    kills: defeated.value,
+    damage: Math.round(damageDealt.value),
+    maxCombo: maxCombo.value,
+    hits: hitCount.value,
+    seconds: Math.round(frame * stepMs / 100) / 10,
+    hpRatio: totalHp / totalMaxHp,
+    syncs: syncUses.value,
+  })
+  playSound(won ? 'victory' : 'defeat')
   const member = activeMember.value
   emit('finish', member ? { won, participantIds: [...participantIds], activeMemberId: member.id } : won)
 }
@@ -313,6 +358,8 @@ function offerUpgrade() {
   projectiles.value = []
   effects.value = []
   hit.value = undefined
+  damageNumbers.value = []
+  displayCombo.value = 0
   if (!options.length) { advanceWave(); return }
   upgradeChoices.value = Array.from({ length: Math.min(3, options.length) }, () => options.splice(Math.floor(Math.random() * options.length), 1)[0]!)
   stopLoop()
@@ -323,6 +370,7 @@ function chooseUpgrade(upgrade: Upgrade) {
   if (upgradeRanks.value[upgrade.id] >= upgrade.max) return
   upgradeRanks.value[upgrade.id]++
   upgradeChoices.value = []
+  playSound('upgrade')
   advanceWave()
   arena.value?.focus({ preventScroll: true })
   startLoop()
@@ -349,6 +397,24 @@ function dodge() {
   dodgeDirection = length ? { x: dx / length, y: dy / length } : { ...facing }
   dodgeFrames.value = 16
   dodgeCooldown.value = 135
+}
+
+/** Impulso de Sincronia: carregado com acertos, liberado manualmente. */
+function activateSync() {
+  if (!playing || suspended.value || syncFrames.value > 0 || syncCharge.value < 100) return
+  syncCharge.value = 0
+  syncFrames.value = 300
+  syncUses.value++
+  dodgeDirection = { ...facing }
+  dodgeFrames.value = Math.max(dodgeFrames.value, 25)
+  const radius = 22
+  effects.value.push({ id: nextId++, x: player.value.x, y: player.value.y, expires: frame + 18, radius, color: '#a7f4ff', kind: 'burst', angle: 0, visual: 'shockwave' })
+  const stage = activeMember.value?.stage ?? props.stage ?? 2
+  const burstDamage = 10 + Math.max(0, Math.min(stage, 6)) * 2
+  for (const enemy of enemies.value) {
+    if (enemy.hp > 0 && Math.hypot(enemy.x - player.value.x, enemy.y - player.value.y) <= radius) harmEnemy(enemy, burstDamage)
+  }
+  playSound('sync')
 }
 function spawnEnemy(kind: EnemyKind, hp: number) {
   const side = Math.floor(Math.random() * 4)
@@ -393,6 +459,18 @@ function harmEnemy(enemy: Enemy, damage: number, proc = true) {
     previousTargetId = enemy.id
     enemy.lastHitFrame = frame
     damage *= 1 + .12 * ranks.combo * comboCount
+  }
+  const dealt = Math.max(0, damage)
+  damageDealt.value += dealt
+  if (proc) {
+    hitCount.value++
+    displayCombo.value = frame - lastComboHitFrame <= 70 ? displayCombo.value + 1 : 1
+    lastComboHitFrame = frame
+    maxCombo.value = Math.max(maxCombo.value, displayCombo.value)
+    if (syncFrames.value === 0) syncCharge.value = Math.min(100, syncCharge.value + 1.5)
+    if (damageNumbers.value.length > 28) damageNumbers.value.splice(0, damageNumbers.value.length - 28)
+    damageNumbers.value.push({ id: nextId++, x: enemy.x, y: enemy.y, amount: Math.round(dealt), critical: dealt >= 18, expires: frame + 26 })
+    playSound('hit')
   }
   enemy.hp -= damage
   hit.value = { x: enemy.x, y: enemy.y, expires: frame + 8, enemyId: enemy.id }
@@ -461,7 +539,7 @@ function releaseEnemyAttack(enemy: Enemy) {
 }
 
 function moveCooldown(cooldownMs: number) {
-  return cooldownMs * Math.max(.28, 1 - .18 * upgradeRanks.value.cadence)
+  return cooldownMs * Math.max(.28, 1 - .18 * upgradeRanks.value.cadence) * (1 - hasteBonus.value) * (syncFrames.value > 0 ? .6 : 1)
 }
 
 function attack(nearest: Enemy) {
@@ -481,7 +559,10 @@ function attack(nearest: Enemy) {
   const damage = move.power * (1 + Math.min(power, 100) * .10) * basePower * (1 + .30 * upgradeRanks.value.power)
     * (1 + (attackCount % 3 === 0 ? .5 * upgradeRanks.value.precision : 0))
     * (1 + battery / 150 * .25 * upgradeRanks.value.battery)
+    * (1 + attackBonus.value)
+    * (syncFrames.value > 0 ? 1.5 : 1)
   fighter.value.nextAttackFrame = frame + Math.max(1, Math.round(moveCooldown(move.cooldownMs) / stepMs))
+  playSound('cast')
   lastAttack = frame + 10
   attacking.value = true
   if (move.pattern === 'burst' || move.pattern === 'slash') {
@@ -528,6 +609,10 @@ function tick() {
     pendingEchoes.splice(index, 1)
   }
   if (attacking.value && frame >= lastAttack) attacking.value = false
+  if (displayCombo.value > 0 && frame - lastComboHitFrame > 70) displayCombo.value = 0
+  if (damageNumbers.value.some(number => number.expires <= frame)) damageNumbers.value = damageNumbers.value.filter(number => number.expires > frame)
+  if (syncFrames.value > 0) syncFrames.value--
+  else if (syncCharge.value < 100) syncCharge.value = Math.min(100, syncCharge.value + .04)
   if (dodgeCooldown.value > 0) dodgeCooldown.value--
   const { x: dx, y: dy } = movement.value
   const invulnerable = dodgeFrames.value > 0
@@ -575,6 +660,7 @@ function tick() {
     if (distance < (enemy.kind === 'boss' ? 10 : 7) && frame % 45 === 0 && !invulnerable) {
       const damage = enemy.kind === 'boss' ? 10 : enemy.charge > 0 ? 9 : 5
       fighter.value.hp = Math.max(0, fighter.value.hp - damage)
+      playSound('hurt')
     }
     if (distance < nearestDistance) { nearest = enemy; nearestDistance = distance }
   }
@@ -603,7 +689,13 @@ function tick() {
   if (enemies.value.some(enemy => enemy.hp <= 0)) {
     const alive = enemies.value.filter(enemy => enemy.hp > 0)
     const kills = enemies.value.length - alive.length
+    for (const enemy of enemies.value) {
+      if (enemy.hp > 0) continue
+      effects.value.push({ id: nextId++, x: enemy.x, y: enemy.y, expires: frame + 12, radius: enemy.kind === 'boss' ? 12 : 5, color: enemy.kind === 'boss' ? '#ffd166' : '#ff9f7a', kind: 'burst', angle: 0, visual: 'shockwave' })
+    }
     defeated.value += kills
+    if (kills && syncFrames.value === 0) syncCharge.value = Math.min(100, syncCharge.value + kills * 8)
+    playSound('kill')
     if (props.adventure) waveDefeated.value += kills
     if (upgradeRanks.value.frenzy) {
       const advanceBy = Math.min(30, 5 * upgradeRanks.value.frenzy * kills)
@@ -669,9 +761,10 @@ onUnmounted(() => {
     <div class="arena-header">
       <span>{{ adventure ? `ÁREA ${areaNumber}` : 'ARENA SURVIVOR' }}</span>
       <strong>{{ adventure ? wave ? `ONDA ${waveIndex + 1}/${waveCount}` : 'CHEFE' : `${time}s` }}</strong>
+      <span class="arena-live-score" aria-label="Pontuação da batalha">{{ liveScore.toLocaleString('pt-BR') }} PTS</span>
       <span>{{ adventure && wave ? `${waveDefeated}/${wave.count}` : defeated }} DERROTADOS</span>
     </div>
-    <div ref="field" class="arena-field" :class="{ 'is-paused': suspended }">
+    <div ref="field" class="arena-field" :class="{ 'is-paused': suspended, 'sync-on': syncActive }">
       <div v-for="enemy in enemies" :key="enemy.id" class="enemy" :class="[enemy.kind, { struck: hit?.enemyId === enemy.id, warning: enemy.windup > 0, enraged: bossEnraged(enemy), chilled: enemy.chillUntil > frame, stunned: enemy.stunUntil > frame, burning: enemy.burnUntil > frame, poisoned: enemy.poisonUntil > frame, exposed: enemy.exposedUntil > frame }]" :style="{ left: enemy.x + '%', top: enemy.y + '%', '--enemy-delay': (enemy.id % 5) * -.12 + 's' }">
         <span v-if="enemy.windup > 0 && !enemy.radialAttack" class="enemy-aim" aria-hidden="true" :style="{ transform: `rotate(${Math.atan2(enemy.vy, enemy.vx * fieldAspect)}rad)` }"></span>
         <span class="enemy-sprite" aria-hidden="true" :class="{ 'is-cel-shaded': enemySheets[enemy.kind].celShaded }" :style="{ backgroundImage: enemySheets[enemy.kind].backgroundImage }"></span>
@@ -680,7 +773,9 @@ onUnmounted(() => {
       <div v-for="shot in projectiles" :key="shot.id" class="projectile" :class="[shot.visual ? `fx-${shot.visual}` : '', { hostile: shot.hostile }]" :style="{left: shot.x + '%', top: shot.y + '%', backgroundColor: shot.color, color: shot.color, transform: shot.visual ? `translate(-50%,-50%) rotate(${Math.atan2(shot.vy, shot.vx * fieldAspect)}rad)` : undefined}"></div>
       <div v-for="effect in effects" :key="effect.id" class="attack-effect" :class="[effect.kind, `fx-${effect.visual}`]" :style="{left: effect.x + '%', top: effect.y + '%', width: effect.radius * 2 + '%', height: effect.radius * 2 + '%', color: effect.color, borderColor: effect.color, transform: `translate(-50%,-50%) rotate(${effect.angle}deg)`}"></div>
       <div v-if="hit" class="hit" aria-hidden="true" :style="{ left: hit.x + '%', top: hit.y + '%' }"></div>
-      <div class="fighter" :class="{ moving: Math.hypot(movement.x, movement.y) > 0, attacking: attacking, dodging: dodgeFrames > 0 }" :style="{ left: player.x + '%', top: player.y + '%' }">
+      <div v-for="number in damageNumbers" :key="number.id" class="damage-number" :class="{ critical: number.critical }" aria-hidden="true" :style="{ left: number.x + '%', top: number.y + '%' }">{{ number.amount }}</div>
+      <div v-if="displayCombo > 1" class="combo-badge" :class="{ hot: displayCombo >= 10 }" aria-hidden="true"><strong>x{{ displayCombo }}</strong><span>COMBO</span></div>
+      <div class="fighter" :class="{ moving: Math.hypot(movement.x, movement.y) > 0, attacking: attacking, dodging: dodgeFrames > 0, 'low-hp': lowHp, 'combo-hot': displayCombo >= 10 }" :style="{ left: player.x + '%', top: player.y + '%' }">
         <AnimatedSprite :key="activeMember?.id" :sheet="activeMember ? activeMember.sheet : sheet" :fallback="activeMember?.sprite ?? sprite" :label="activeMember?.name ?? 'Parceiro'" :frames="fighterFrames" :paused="suspended" :interval="120" />
       </div>
       <div v-if="boss" class="boss-hud" :class="{ enraged: bossEnraged(boss) }">
@@ -732,17 +827,25 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
-    <div class="arena-health">
+    <button type="button" class="sync-button" :class="{ ready: syncReady, active: syncActive }" :disabled="suspended || (!syncReady && !syncActive)"
+      :aria-label="syncActive ? 'Sincronia ativa' : syncReady ? 'Liberar Sincronia' : `Sincronia em ${Math.round(syncCharge)}%`"
+      @pointerdown.stop.prevent="pointerAction($event, activateSync)" @click="keyboardAction($event, activateSync)">
+      <span class="sync-name">SINCRONIA</span>
+      <span class="sync-track" aria-hidden="true"><span :style="{ width: (syncActive ? 100 : syncCharge) + '%' }"></span></span>
+      <strong>{{ syncActive ? Math.ceil(syncFrames * stepMs / 1000) + 's' : Math.round(syncCharge) + '%' }}</strong>
+    </button>
+    <div class="arena-health" :class="{ low: lowHp }">
       <span>HP</span>
       <div role="progressbar" :aria-label="activeMember ? `Vida de ${activeMember.name}` : 'Vida do parceiro'" :aria-valuenow="fighter.hp" :aria-valuemax="fighter.maxHp">
         <span :style="{ width: 100 * fighter.hp / fighter.maxHp + '%' }"></span>
       </div>
       <strong>{{ fighter.hp }}/{{ fighter.maxHp }}</strong>
     </div>
+    <p class="sync-hint">Acertos e abates carregam a Sincronia. Libere-a para 6 segundos de +50% de dano, recarga acelerada e um impacto de área.</p>
     <p class="arena-credit">Sprites: templates BEM e Greymon por EvilGavin · Digital Link</p>
     <p v-if="adventure">Elimine as {{ waveCount }} ondas e o chefe para concluir a área. Escolha uma melhoria ao fim de cada onda. Os inimigos sinalizam antes de disparar ou avançar.</p>
     <p v-else>Sobreviva por {{ duration }} segundos. O ataque selecionado é automático. Inimigos piscam antes de atirar ou avançar. Os golpes são adaptados para cada parceiro e ficam mais fortes com estágio e treino.</p>
-    <p class="arena-tip">Arraste o controle para mover; quanto mais longe do centro, mais rápido. Teclado: setas ou WASD movem; 1–3 ou Q escolhe ataque; espaço, F ou Shift esquiva.<template v-if="roster.length > 1"> Use {{ teamKeys[0] }}–{{ teamKeys[roster.length - 1] }} para trocar de Digimon.</template></p>
+    <p class="arena-tip">Arraste o controle para mover; quanto mais longe do centro, mais rápido. Teclado: setas ou WASD movem; 1–3 ou Q escolhe ataque; espaço, F ou Shift esquiva; R libera a Sincronia quando ela estiver cheia.<template v-if="roster.length > 1"> Use {{ teamKeys[0] }}–{{ teamKeys[roster.length - 1] }} para trocar de Digimon.</template></p>
     <div class="arena-actions">
       <button type="button" class="arena-action" :disabled="suspended" @click="pause">Pausar</button>
       <button type="button" class="arena-action" @click="finish(false)">Sair da batalha</button>
@@ -752,9 +855,40 @@ onUnmounted(() => {
 
 <style scoped>
 .arena-field { height: clamp(190px, 36svh, 340px); }
+.arena-live-score { color:#ffe9a6; font-variant-numeric:tabular-nums; letter-spacing:.04em; }
+.sync-button { display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:9px; width:100%; min-height:42px; margin-top:9px; padding:5px 10px; border:1px solid #35515a; border-radius:9px; background:#12222b; color:#8fb8c0; text-align:left; touch-action:manipulation; }
+.sync-name { font:700 9px 'Space Grotesk'; letter-spacing:.12em; color:#9fd6e2; }
+.sync-track { display:block; height:7px; border-radius:8px; background:#223a42; overflow:hidden; }
+.sync-track span { display:block; height:100%; border-radius:8px; background:linear-gradient(90deg,#4bc8ff,#a7f4ff); transition:width .12s linear; }
+.sync-button strong { font:700 11px 'Space Grotesk'; color:#c8eef6; font-variant-numeric:tabular-nums; }
+.sync-button.ready { border-color:#8ee8ff; color:#e5fbff; animation:sync-ready 1.1s ease-in-out infinite alternate; }
+.sync-button.ready .sync-track span { background:linear-gradient(90deg,#8ee8ff,#f0ffff); }
+.sync-button.active { border-color:#ffe082; background:#2e2a16; color:#fff3c2; }
+.sync-button.active .sync-name { color:#ffe082; }
+.sync-button.active .sync-track span { background:linear-gradient(90deg,#ffd166,#fff3c2); }
+.sync-button.active strong { color:#fff3c2; }
+@keyframes sync-ready { from { box-shadow:0 0 4px #6bd8ff22; } to { box-shadow:0 0 20px #6bd8ff88; } }
+.arena-field.sync-on { border-color:#8ee8ff; box-shadow:inset 0 0 42px #6bd8ff33,0 0 18px #6bd8ff33; }
+.arena-field.sync-on .fighter .animated-sprite, .arena-field.sync-on .fighter .animated-fallback { filter:drop-shadow(0 0 10px #a7f4ff) drop-shadow(0 0 24px #6bd8ffaa); }
+.sync-hint { font-size:10px!important; color:#8fc7d4!important; margin:6px 0; }
+@media (prefers-reduced-motion:reduce) { .sync-button.ready { animation:none; } }
 .arena-credit { margin:5px 0; font-size:9px!important; }
+.damage-number { position:absolute; z-index:4; pointer-events:none; transform:translate(-50%,-50%); color:#f6ffd6; font:700 12px 'Space Grotesk'; text-shadow:0 1px 2px #0b1418,0 0 8px #0b1418; animation:damage-float .52s ease-out both; }
+.damage-number.critical { color:#ffd166; font-size:15px; }
+@keyframes damage-float { 0% { opacity:0; transform:translate(-50%,-20%) scale(.6); } 25% { opacity:1; transform:translate(-50%,-70%) scale(1.15); } 100% { opacity:0; transform:translate(-50%,-170%) scale(.95); } }
+.combo-badge { position:absolute; z-index:4; top:10px; right:10px; display:grid; place-items:center; padding:5px 9px; border:1px solid #ffd166; border-radius:10px; background:#101b25d9; color:#ffe9a6; pointer-events:none; animation:combo-pop .18s ease-out; }
+.combo-badge strong { font:700 17px 'Space Grotesk'; line-height:1; }
+.combo-badge span { font:700 8px 'Space Grotesk'; letter-spacing:.16em; margin-top:2px; }
+.combo-badge.hot { border-color:#ff8a65; color:#ffd6a8; box-shadow:0 0 18px #ff8a6599; }
+@keyframes combo-pop { from { transform:scale(.7); } to { transform:scale(1); } }
+.fighter.combo-hot .animated-sprite, .fighter.combo-hot .animated-fallback { filter:drop-shadow(0 0 10px #ffd166) drop-shadow(0 0 22px #ff8a65aa); }
+.fighter.low-hp .animated-sprite, .fighter.low-hp .animated-fallback { animation:low-hp-pulse .7s ease-in-out infinite alternate; }
+@keyframes low-hp-pulse { from { filter:drop-shadow(0 0 4px #ff6b6b); } to { filter:drop-shadow(0 0 16px #ff3b3b); } }
+.arena-health.low div span { background:#ff7676; }
+.arena-health.low div { box-shadow:0 0 12px #ff4d4d88; }
+@media (prefers-reduced-motion:reduce) { .damage-number,.combo-badge,.fighter.low-hp .animated-sprite,.fighter.low-hp .animated-fallback { animation:none; } }
 .arena-tip { margin:6px 0; }
-@media(max-height:740px){.arena-field{height:29svh;min-height:170px}.arena p{margin:5px 0}.move-list{margin:6px 0}.move-button{min-height:50px}.arena-actions{margin-top:5px}}
+@media(max-height:740px){.arena-field{height:29svh;min-height:170px}.arena p{margin:5px 0}.move-list{margin:6px 0}.move-button{min-height:50px}.arena-actions{margin-top:5px}.sync-button{min-height:36px;margin-top:6px}.sync-hint{display:none}}
 .movement-controls { position:relative; }
 .joystick { position:relative; width:140px; height:140px; border:2px solid #729a79; border-radius:50%; background:radial-gradient(circle, #3c5849 0 34%, #213533 35% 100%); touch-action:none; user-select:none; }
 .joystick.disabled { opacity:.5; }

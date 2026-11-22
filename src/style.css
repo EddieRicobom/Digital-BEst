@@ -110,3 +110,104 @@ nav .active{background:#26382f;border-radius:10px}
 .form-node{position:relative;z-index:1;flex:none;width:14px;height:14px;border:2px solid #93b983;border-radius:50%;margin-top:3px;background:#172b25}
 .form-tree li.current .form-node{background:#c5f064;border-color:#c5f064;box-shadow:0 0 10px #c5f06488}
 .form-tree strong,.form-tree small{display:block}.form-tree strong{font-size:13px;color:#e7edf7}.form-tree small{font-size:10px;color:#91a6a2;margin-top:2px}
+
+/* ---------------------------------------------------------------- núcleo */
+.wallet-strip{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:-6px 0 14px}
+.wallet-item{display:flex;align-items:center;gap:5px;padding:6px 9px;border:1px solid #2e4443;border-radius:999px;background:#101c25;color:#d9efb8}
+.wallet-item strong{font:700 14px 'Space Grotesk';color:#f2ffd9;line-height:1}
+.wallet-item small{font:700 8px 'Space Grotesk';letter-spacing:.12em;color:#7e9a91}
+.wallet-item.flame strong{color:#ffd08a}
+.wallet-claim{display:flex;align-items:center;gap:5px;margin-left:auto;min-height:34px;padding:5px 10px;border:1px solid #b6e668;border-radius:999px;background:#2c462f;color:#e8ffc4;font:700 9px 'Space Grotesk';letter-spacing:.06em}
+.wallet-mult{margin-left:auto;color:#88a398;font-size:10px;letter-spacing:.05em}
+.pill.ready{border-color:#c8f36b;color:#0f1b14;background:#c8f36b;box-shadow:0 0 16px #c8f36b55}
+.bond-progress{margin-top:8px}
+.evolution-ready{display:block;width:100%;margin:0 0 12px;min-height:46px;padding:10px 12px;border:1px solid #bfe86b;border-radius:11px;background:linear-gradient(100deg,#2c462f,#213a2c);color:#ecffc8;font:700 10px 'Space Grotesk';letter-spacing:.08em;text-align:left;animation:claim-pulse 1.7s ease-in-out infinite alternate}
+.evo-ready-note{margin:0 0 10px!important;padding:8px 10px;border-radius:9px;background:#20321d;color:#d9f8a0!important;font-size:11px!important;font-weight:700}
+.mission-list{list-style:none;margin:10px 0 0;padding:0!important;display:grid;gap:7px}
+.mission-list li{display:flex;align-items:center;gap:9px;padding:9px;border:1px solid #263a3b;border-radius:11px;background:#0e1922}
+.mission-list li.done{border-color:#48653f;background:#142219}
+.mission-list li.claimed{opacity:.62}
+.mission-icon{display:grid;place-items:center;flex:none;width:32px;height:32px;border-radius:9px;background:#213631;color:#c8f36b}
+.mission-copy{min-width:0;flex:1}
+.mission-copy strong,.mission-copy small{display:block}
+.mission-copy strong{font-size:12px;color:#e6f2dc}
+.mission-copy small{font-size:9px!important;color:#8ea49b!important;line-height:1.4;margin-top:1px}
+.mission-bar{height:4px;margin:6px 0 3px;border-radius:6px;background:#26383b;overflow:hidden}
+.mission-bar span{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,#9fd95d,#d7ff7a);transition:width .3s ease}
+.mission-state{flex:none;font:700 10px 'Space Grotesk';color:#8ea49b}
+.mission-list li.done .mission-state{color:#c8f36b}
+.mini-claim{flex:none;min-height:36px;padding:5px 9px;border:1px solid #bfe86b;border-radius:8px;background:#c8f36b;color:#12210f;font:700 9px 'Space Grotesk';letter-spacing:.05em;animation:claim-pulse 1.6s ease-in-out infinite alternate}
+@keyframes claim-pulse{from{box-shadow:0 0 0 #c8f36b00}to{box-shadow:0 0 14px #c8f36b88}}
+.core-hero h2{font-size:34px;color:#eaffc0;margin-bottom:10px}
+.core-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin:12px 0}
+.core-stats div{padding:10px;border:1px solid #263a3b;border-radius:11px;background:#0e1922}
+.core-stats small{display:block;font:700 8px 'Space Grotesk';letter-spacing:.11em;color:#7e9a91}
+.core-stats strong{display:block;margin-top:4px;font:700 20px 'Space Grotesk';color:#e9f7d0}
+.core-stats em{display:block;font:400 10px 'DM Sans';color:#8ea49b}
+.chip-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px}
+.chip-card{display:flex;flex-direction:column;min-width:0;padding:11px;border:1px solid #29413d;border-radius:12px;background:#0e1922}
+.chip-card.maxed{border-color:#4f6d41;background:#132019}
+.chip-card.deal{border-color:#c9a93f;box-shadow:0 0 18px #c9a93f22}
+.chip-deal{margin:-3px 0 7px;padding:3px 6px;border-radius:6px;background:#3a3113;color:#ffe08a;font:700 8px 'Space Grotesk';letter-spacing:.08em;text-align:center}
+.chip-card button s{margin-right:5px;color:#8c9a86;font-weight:400}
+.chip-head{display:flex;align-items:center;gap:6px;color:#c8f36b}
+.chip-head strong{font-size:12px;color:#e8f6d8;flex:1;min-width:0;overflow-wrap:anywhere}
+.chip-head span{flex:none;font:700 9px 'Space Grotesk';color:#9db69f}
+.chip-card p{margin:7px 0;font-size:10px!important;line-height:1.5;color:#92a8a0!important}
+.chip-pips{display:flex;gap:3px;margin-bottom:9px}
+.chip-pips span{flex:1;height:4px;border-radius:4px;background:#28403e}
+.chip-pips span.on{background:#b9ed64;box-shadow:0 0 6px #b9ed6466}
+.chip-card button,.chip-max{margin-top:auto;min-height:38px;border:1px solid #b9e465;border-radius:8px;background:#2b4730;color:#e7ffc0;font:700 9px 'Space Grotesk';letter-spacing:.06em}
+.chip-card button:disabled{border-color:#344a44;background:#1a2a2d;color:#738982}
+.chip-max{display:grid;place-items:center;border-style:dashed;color:#b9ed64;background:transparent}
+.records{grid-template-columns:repeat(3,minmax(0,1fr))!important;margin-top:8px}
+.records em{display:block;margin-top:1px;font:400 9px 'DM Sans';font-style:normal;color:#8ea49b}
+.medal-grid{list-style:none;margin:8px 0 0;padding:0!important;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.medal-grid li{display:grid;gap:2px;min-width:0;padding:10px;border:1px dashed #2c413f;border-radius:11px;background:#0d171f;color:#5f746f}
+.medal-grid li.earned{border-style:solid;border-color:#5d7c4c;background:#142219;color:#c8f36b}
+.medal-grid strong{font-size:11px;color:#cad8cf}
+.medal-grid li.earned strong{color:#eaffc4}
+.medal-grid small{font-size:9px!important;line-height:1.4;color:#80958e!important}
+.medal-grid li>span{font:700 7px 'Space Grotesk';letter-spacing:.12em;margin-top:3px;color:#6b8079}
+.medal-grid li.earned>span{color:#b9ed64}
+.sound-toggle{display:flex;align-items:center;gap:10px;min-height:48px;cursor:pointer}
+.sound-toggle input{width:18px;height:18px;flex:none;accent-color:#c4f36a}
+.sound-toggle strong,.sound-toggle small{display:block}
+.sound-toggle small{margin-top:3px;color:#8ea49b;font-size:10px;line-height:1.4}
+.area-record{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;padding:9px 11px;border:1px solid #6d7c3d;border-radius:10px;background:#1b261c;color:#dcebb5;font:700 8px 'Space Grotesk';letter-spacing:.1em}
+.area-record strong{color:#f4ffd1;font-size:13px}
+.reward-hint{margin:9px 0 0!important;font-size:10px!important;color:#93a88b!important}
+.daily-win{display:flex;align-items:center;gap:6px;margin:7px 0 0!important;padding:7px 9px;border:1px solid #8a7430;border-radius:9px;background:#2b2513;color:#ffe6a3!important;font-size:10px!important;font-weight:700}
+/* Recompensa de fim de batalha */
+.reward-overlay{position:fixed;inset:0;z-index:50;display:grid;place-items:center;padding:18px;background:#050b12cc;backdrop-filter:blur(7px);animation:reward-fade .22s ease-out}
+.reward-card{position:relative;width:min(100%,420px);max-height:calc(100svh - 36px);overflow-y:auto;padding:22px;border:1px solid #4e6f45;border-radius:20px;background:radial-gradient(ellipse at 50% -20%,#2b4834,#101b22 62%);box-shadow:0 24px 80px #000b,0 0 40px #b9ed6414;text-align:center;animation:reward-pop .3s cubic-bezier(.2,1.4,.4,1)}
+.confetti{position:absolute;inset:0;overflow:hidden;border-radius:inherit;pointer-events:none;z-index:0}
+.confetti i{position:absolute;top:-14px;width:6px;height:11px;border-radius:2px;opacity:0;animation:confetti-fall 1.5s ease-in forwards}
+.reward-card>*:not(.confetti){position:relative;z-index:1}
+@keyframes confetti-fall{0%{opacity:0;transform:translateY(-10px) rotate(0)}12%{opacity:1}100%{opacity:0;transform:translateY(420px) rotate(540deg)}}
+.reward-card.lost{border-color:#6b4444;background:radial-gradient(ellipse at 50% -20%,#3a2426,#101b22 62%)}
+.reward-card h2{margin:4px 0 8px;font:700 28px 'Space Grotesk';letter-spacing:-.02em;color:#f4ffd9}
+.reward-card.lost h2{color:#ffd9d4}
+.rank-badge{display:grid;place-items:center;width:66px;height:66px;margin:4px auto 2px;border:3px solid #c8f36b;border-radius:50%;color:#ecffc2;background:#1d3325;font:700 34px 'Space Grotesk';text-shadow:0 0 18px #c8f36b88;box-shadow:0 0 24px #c8f36b33 inset,0 0 24px #c8f36b22}
+.rank-badge[data-rank="S"]{border-color:#ffe082;color:#fff3c2;background:#3b3117;text-shadow:0 0 22px #ffd54f;box-shadow:0 0 30px #ffd54f55}
+.rank-badge[data-rank="A"]{border-color:#8ee8ff;color:#ddf8ff;background:#1b3440;text-shadow:0 0 20px #6bd8ff}
+.rank-badge[data-rank="C"],.rank-badge[data-rank="D"]{border-color:#9aa8a4;color:#e0e8e4;background:#24312f;box-shadow:none}
+.rank-stars{display:flex;justify-content:center;gap:4px;margin:3px 0 1px;color:#3c4d46;font-size:17px;letter-spacing:.08em}
+.rank-stars .on{color:#ffd76b;text-shadow:0 0 12px #ffd76b88}
+.reward-score{margin:6px 0 10px;font:700 15px 'Space Grotesk';color:#ffe9a6;letter-spacing:.06em}
+.reward-score small{display:inline-block;margin-left:6px;padding:2px 6px;border-radius:999px;background:#c8f36b;color:#12210f;font:700 8px 'Space Grotesk';letter-spacing:.08em;animation:claim-pulse 1.2s ease-in-out infinite alternate}
+.reward-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin:12px 0;text-align:left}
+.reward-grid div{padding:9px 10px;border:1px solid #2e4640;border-radius:10px;background:#0d1820}
+.reward-grid small{display:block;font:700 8px 'Space Grotesk';letter-spacing:.11em;color:#829990}
+.reward-grid strong{display:block;margin-top:3px;font:700 18px 'Space Grotesk';color:#eaffc0}
+.reward-grid em{display:block;margin-top:2px;font:700 8px 'Space Grotesk';font-style:normal;letter-spacing:.06em;color:#ffd08a}
+.reward-highlight{margin:10px 0 0!important;padding:8px;border-radius:9px;background:#2b4022;color:#dcf8a9!important;font-size:11px!important}
+.reward-missions{display:block;width:100%;margin:8px 0 0;padding:7px;border:1px dashed #6b7f44;border-radius:9px;background:#1a2817;color:#cfe6a0;font-size:10px;font-weight:700;letter-spacing:.02em}
+.reward-medals{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:5px;margin-top:9px;padding:8px;border:1px solid #8a7430;border-radius:9px;background:#2b2513;animation:claim-pulse 1.1s ease-in-out infinite alternate}
+.reward-medals span{font:700 8px 'Space Grotesk';letter-spacing:.12em;color:#ffd76b}
+.reward-medals strong{font-size:10px;color:#fff2c2}
+.reward-card .primary{width:100%;margin-top:14px}
+@keyframes reward-fade{from{opacity:0}to{opacity:1}}
+@keyframes reward-pop{from{opacity:0;transform:translateY(14px) scale(.94)}to{opacity:1;transform:none}}
+@media(max-width:380px){.records{grid-template-columns:repeat(2,minmax(0,1fr))!important}.chip-grid{grid-template-columns:1fr}.medal-grid{grid-template-columns:1fr}}
+@media(prefers-reduced-motion:reduce){.reward-overlay,.reward-card,.reward-score small,.mini-claim{animation:none!important}}

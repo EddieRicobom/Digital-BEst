@@ -62,6 +62,47 @@ describe('controles da arena', () => {
     button('Retomar batalha').click(); advance(136); await nextTick()
     expect(evade.disabled).toBe(false)
   })
+  it('aplica bônus permanentes de vida, dano e recarga ao membro', async () => {
+    app = createApp(Arena, {
+      adventure: true, areaLevel: 0,
+      team: [member('0', 'Agumon', { baseHp: 4500, stamina: 3, hpBonus: .3, attackBonus: .5, hasteBonus: .2 })],
+    })
+    app.mount(host); await nextTick()
+    expect(hp()).toBe(215)
+    const boosted = Number(button('Bafo de Brasa').textContent?.match(/([0-9.]+)s/)?.[1])
+    expect(boosted).toBeLessThan(.66)
+    const plain = createApp(Arena, { partner: 'Agumon', stage: 2, baseAttack: 1000, stamina: 3, sprite: '' })
+    const plainHost = document.createElement('div'); document.body.appendChild(plainHost)
+    plain.mount(plainHost); await nextTick()
+    const baseline = Number([...plainHost.querySelectorAll('button')].find(item => item.textContent?.includes('Bafo de Brasa'))?.textContent?.match(/([0-9.]+)s/)?.[1])
+    expect(boosted).toBeLessThan(baseline)
+    plain.unmount(); plainHost.remove()
+  })
+  it('carrega a Sincronia com acertos e libera o impulso manualmente', async () => {
+    app = createApp(Arena, { team: [member('0', 'Agumon', { power: 100, stamina: 300, baseAttack: 2200 })] })
+    app.mount(host); await nextTick()
+    const sync = host.querySelector<HTMLButtonElement>('.sync-button')!
+    expect(sync.disabled).toBe(true)
+    for (let tick = 0; tick < 2200 && !sync.classList.contains('ready'); tick++) {
+      advance(1); await nextTick()
+    }
+    expect(sync.classList.contains('ready')).toBe(true)
+    expect(sync.disabled).toBe(false)
+    sync.click(); await nextTick()
+    expect(sync.classList.contains('active')).toBe(true)
+    expect(host.querySelector('.arena-field')?.classList.contains('sync-on')).toBe(true)
+    advance(305); await nextTick()
+    expect(sync.classList.contains('active')).toBe(false)
+  })
+  it('emite as estatísticas da batalha antes do resultado', async () => {
+    const stats = vi.fn(); const finish = vi.fn()
+    app = createApp(Arena, { partner: 'Agumon', stage: 2, power: 0, stamina: 0, sprite: '', onStats: stats, onFinish: finish })
+    app.mount(host); await nextTick()
+    button('Sair da batalha').click()
+    expect(stats).toHaveBeenCalledOnce()
+    expect(stats.mock.calls[0]?.[0]).toMatchObject({ kills: 0, damage: 0, maxCombo: 0, hits: 0, hpRatio: 1 })
+    expect(finish).toHaveBeenCalledOnce()
+  })
   it('coloca os controles dentro do campo de jogo', async () => {
     app = createApp(Arena, { team: [{id:'0',name:'Agumon',stage:2,power:0,stamina:0,sprite:''},{id:'1',name:'Gabumon',stage:2,power:0,stamina:0,sprite:''}] })
     app.mount(host); await nextTick()
